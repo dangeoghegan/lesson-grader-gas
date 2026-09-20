@@ -433,7 +433,19 @@ var Logging = (function() {
 var Sheets = (function() {
   function setupOrMigrateAssessmentSystem() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // Backup step
+    try {
+      var driveFile = DriveApp.getFileById(ss.getId());
+      var timeString = Utils.formatDate(new Date()).replace(/[:\/\\]/g, '-');
+      driveFile.makeCopy("[Backup " + timeString + "] " + ss.getName());
+    } catch(e) {
+      Logging.logError('setupOrMigrateAssessmentSystem', 'Failed to backup spreadsheet: ' + e.message);
+    }
+
     var schemas = [
+      { name: 'RubricProfiles', headers: ['ProfileID', 'ProfileName', 'JSONDefinition', 'CreatedAt'] },
+      { name: 'ClassLists', headers: ['ClassID', 'OfficialName', 'PreferredName', 'SchoolEmail', 'Active'] },
       { name: Config.SHEET_CLASSROOM_CONFIG, headers: ['ConfigID', 'CourseID', 'CourseName', 'CourseSection', 'CourseWorkID', 'AssignmentTitle', 'MaxPoints', 'SavedAt', 'SavedBy', 'Active'] },
       { name: Config.SHEET_SUBMISSIONS, headers: ['SubmissionRecordID', 'ClassroomCourseID', 'ClassroomCourseWorkID', 'ClassroomSubmissionID', 'StudentUserID', 'StudentName', 'StudentEmail', 'Class', 'Task', 'SubmissionVersion', 'SourceType', 'ClassroomState', 'TurnedInTime', 'UpdateTime', 'Late', 'AttachmentSummary', 'AttachmentFileIDsJSON', 'AttachmentMetadataJSON', 'DriveFolderID', 'Status', 'ParentSubmissionRecordID', 'CurrentOfficial', 'LockedAt', 'LockedBy', 'ApprovedAt', 'ApprovedBy', 'ClassroomAssignedGrade', 'LastClassroomSyncAt', 'LastSyncResult', 'Notes'] },
       { name: Config.SHEET_SUBMISSION_FILES, headers: ['SubmissionRecordID', 'FileRecordID', 'SourceType', 'DriveFileID', 'FileName', 'MimeType', 'AlternateLink', 'ThumbnailUrl', 'FileSize', 'EligibleForAI', 'AIReviewStatus', 'AIExtractedText', 'Limitations', 'CreatedAt'] },
@@ -1559,12 +1571,9 @@ var GeminiService = (function() {
  * SECTION 8: EMBEDDED HTML TEMPLATES
  * REBUILT FROM SCRATCH — paste this entire block into Code.gs between the
  * end of Section 7 (GeminiService) and the start of Section 9 (onOpen).
- * This replaces the missing "var HtmlTemplates = (function() {...})();"
- * and resolves "ReferenceError: HtmlTemplates is not defined".
- * ============================================================================ */
-var HtmlTemplates = (function() {
+ * This replaces the missing "var HtmlTemplates = (function() {
 
-  function getAssessmentPdfReportHtml(detail) {
+function getAssessmentPdfReportHtml(detail) {
     var sub = detail.submission;
     var cMap = detail.criteriaMap;
     var fb = detail.feedback || {};
@@ -1644,549 +1653,8 @@ var HtmlTemplates = (function() {
       '</body></html>';
   }
 
-  function getCourseworkPickerHtml() {
-    return '<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">' +
-      '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:20px;background:#f8fafc;color:#1e293b;}' +
-      'h2{margin-top:0;font-size:18px;color:#0f172a;}.form-group{margin-bottom:16px;}label{display:block;font-weight:600;font-size:13px;margin-bottom:6px;}' +
-      'select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;font-size:14px;}' +
-      '.btn-group{margin-top:24px;display:flex;justify-content:flex-end;gap:10px;}button{padding:8px 16px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;border:none;}' +
-      '.btn-primary{background:#2563eb;color:#fff;}.btn-secondary{background:#e2e8f0;color:#334155;}.status{margin-top:12px;font-size:13px;font-weight:500;}' +
-      '</style></head><body><h2>Select Classroom Course &amp; Assignment</h2>' +
-      '<div class="form-group"><label>1. Course:</label><select id="courseSelect" onchange="onCourseChanged()"><option value="">Loading courses...</option></select></div>' +
-      '<div class="form-group"><label>2. Assignment:</label><select id="cwSelect" disabled><option value="">Select course first</option></select></div>' +
-      '<div id="status" class="status"></div>' +
-      '<div class="btn-group"><button class="btn-secondary" onclick="google.script.host.close()">Cancel</button><button id="saveBtn" class="btn-primary" onclick="saveSelection()" disabled>Save Assignment</button></div>' +
-      '<script>' +
-      'window.onload=function(){google.script.run.withSuccessHandler(function(r){var s=document.getElementById("courseSelect");s.innerHTML="<option value=\\"\\">-- Select Course --</option>";var cl=r.courses||[];for(var i=0;i<cl.length;i++){var c=cl[i];var o=document.createElement("option");o.value=c.id;o.textContent=c.name+(c.section?" ("+c.section+")":"");s.appendChild(o);}}).apiListTeacherCourses();};' +
-      'function onCourseChanged(){var cid=document.getElementById("courseSelect").value;var cws=document.getElementById("cwSelect");if(!cid){cws.disabled=true;return;}cws.disabled=true;cws.innerHTML="<option>Loading coursework...</option>";google.script.run.withSuccessHandler(function(r){cws.innerHTML="<option value=\\"\\">-- Select Assignment --</option>";var cwl=r.coursework||[];for(var j=0;j<cwl.length;j++){var cw=cwl[j];var o=document.createElement("option");o.value=cw.id;o.textContent=cw.title+" ("+cw.maxPoints+" pts)";cws.appendChild(o);}cws.disabled=false;document.getElementById("saveBtn").disabled=false;}).apiListCourseWork(cid);}' +
-      'function saveSelection(){var cid=document.getElementById("courseSelect").value;var cwid=document.getElementById("cwSelect").value;document.getElementById("status").textContent="Saving...";google.script.run.withSuccessHandler(function(r){alert(r.message);google.script.host.close();}).apiSaveClassroomSelection(cid, cwid);}' +
-      '<\/script></body></html>';
-  }
-
-  function getClassBatchGradingHtml() {
-    return '<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">' +
-      '<title>Class AI Grading Runner</title>' +
-      '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#0f172a;}' +
-      '.bar-wrap{background:#e2e8f0;border-radius:8px;height:24px;width:100%;overflow:hidden;margin:16px 0;position:relative;}' +
-      '.bar-fill{background:linear-gradient(90deg,#7c3aed,#2563eb);height:100%;width:0%;transition:width 0.4s ease;}' +
-      '.bar-text{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.5);}' +
-      '.status-box{background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:14px;font-size:13px;min-height:90px;display:flex;flex-direction:column;justify-content:center;}' +
-      '.log-box{margin-top:14px;height:120px;overflow-y:auto;background:#0f172a;color:#38bdf8;padding:10px;border-radius:6px;font-family:monospace;font-size:11px;}' +
-      'button{padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;border:none;}' +
-      '.btn-start{background:#7c3aed;color:#fff;}.btn-cancel{background:#e2e8f0;color:#334155;}' +
-      '</style></head><body>' +
-      '<h2 style="margin-top:0;">Class-Wide AI Assessment Runner</h2>' +
-      '<p style="font-size:13px;color:#475569;">Sequentially grades student submissions with high-accuracy vision checks, derives grades, and generates feedback drafts with 2.5s pacing intervals.</p>' +
-      '<div class="bar-wrap"><div id="bar" class="bar-fill"></div><div id="barTxt" class="bar-text">0%</div></div>' +
-      '<div class="status-box"><div id="curStudent" style="font-weight:700;">Ready to start</div><div id="subDetail" style="font-size:12px;color:#64748b;margin-top:4px;">Click Start to begin grading all students.</div></div>' +
-      '<div id="log" class="log-box">&gt; System ready.</div>' +
-      '<div style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">' +
-        '<button class="btn-cancel" onclick="stopOrClose()">Close</button>' +
-        '<button id="btnStart" class="btn-start" onclick="startBatch()">Start Class Grading</button>' +
-      '</div>' +
-      '<script>' +
-      'var list = [], currentIdx = 0, isRunning = false;' +
-      'window.onload = function(){ google.script.run.withSuccessHandler(function(subs){ list = subs || []; document.getElementById("subDetail").textContent = list.length + " submissions available for grading."; }).apiGetClassSubmissions(); };' +
-      'function log(msg){ var el = document.getElementById("log"); el.innerHTML += "<div>&gt; " + msg + "</div>"; el.scrollTop = el.scrollHeight; }' +
-      'function startBatch(){ if(list.length === 0){ alert("No submissions found."); return; } isRunning = true; document.getElementById("btnStart").disabled = true; processNext(); }' +
-      'function processNext(){' +
-        'if(!isRunning || currentIdx >= list.length){ finishBatch(); return; }' +
-        'var s = list[currentIdx];' +
-        'var pct = Math.round(((currentIdx + 1) / list.length) * 100);' +
-        'document.getElementById("bar").style.width = pct + "%";' +
-        'document.getElementById("barTxt").textContent = pct + "% (" + (currentIdx + 1) + "/" + list.length + ")";' +
-        'document.getElementById("curStudent").textContent = "Grading: " + s.StudentName + " (v" + s.SubmissionVersion + ")";' +
-        'document.getElementById("subDetail").textContent = "Auditing Drive files & generating feedback...";' +
-        'log("Assessing " + s.StudentName + "...");' +
-        'google.script.run.withSuccessHandler(function(res){' +
-          'if(res.success){ log("Completed " + s.StudentName + ": " + res.message); }' +
-          'else { log(s.StudentName + " error: " + res.message); }' +
-          'currentIdx++;' +
-          'setTimeout(processNext, 2500);' +
-        '}).withFailureHandler(function(err){' +
-          'log("Script error on " + s.StudentName + ": " + err.message);' +
-          'currentIdx++;' +
-          'setTimeout(processNext, 2500);' +
-        '}).apiGradeSingleStudentBatch(s.SubmissionRecordID);' +
-      '}' +
-      'function finishBatch(){ isRunning = false; document.getElementById("curStudent").textContent = "Class AI Grading Complete!"; document.getElementById("subDetail").textContent = "All " + list.length + " students graded."; log("Batch run complete. Please review marks in Assessment Studio."); document.getElementById("btnStart").style.display = "none"; }' +
-      'function stopOrClose(){ isRunning = false; google.script.host.close(); }' +
-      '<\/script></body></html>';
-  }
-
-  function getVoiceDictationHtml(criterionId) {
-    return '<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">' +
-      '<style>body{font-family:sans-serif;margin:0;padding:16px;background:#f8fafc;color:#0f172a;}textarea{width:100%;height:110px;padding:8px;box-sizing:border-box;border-radius:4px;border:1px solid #cbd5e1;}' +
-      '.btn-group{margin-top:10px;display:flex;justify-content:space-between;}button{padding:8px 14px;border-radius:4px;border:none;font-weight:600;cursor:pointer;}' +
-      '.btn-mic{background:#dc2626;color:#fff;}.btn-send{background:#2563eb;color:#fff;}.btn-cancel{background:#e2e8f0;}' +
-      '</style></head><body><h3>Dictate Notes (' + criterionId + ')</h3>' +
-      '<textarea id="txt" placeholder="Click Start Dictating and speak..."></textarea>' +
-      '<div class="btn-group"><button id="btnMic" class="btn-mic" onclick="toggle()">Start Dictating</button><div><button class="btn-send" onclick="send()">Insert Note</button> <button class="btn-cancel" onclick="google.script.host.close()">Close</button></div></div>' +
-      '<script>' +
-      'var cid="' + criterionId + '", rec=null, run=false;' +
-      'window.onload=function(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert("Speech API not supported in this browser.");return;}rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang="en-AU";rec.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;++i)t+=e.results[i][0].transcript;document.getElementById("txt").value=t;};rec.onend=function(){run=false;document.getElementById("btnMic").textContent="Start Dictating";};};' +
-      'function toggle(){if(run){rec.stop();run=false;document.getElementById("btnMic").textContent="Start Dictating";}else{rec.start();run=true;document.getElementById("btnMic").textContent="Stop Dictating";}}' +
-      'function send(){if(window.opener){window.opener.postMessage({type:"VOICE_TRANSCRIPT",criterionId:cid,transcript:document.getElementById("txt").value},"*");}google.script.host.close();}' +
-      '<\/script></body></html>';
-  }
-
-  function getAssessmentStudioHtml() {
-    var head =
-      '<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">' +
-      '<title>AI Assessment Studio</title>' +
-      '<style>' +
-      '*{box-sizing:border-box;}' +
-      'html,body{margin:0;padding:0;width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f8fafc;color:#0f172a;overflow:hidden;}' +
-      'header{background:#fff;border-bottom:1px solid #e2e8f0;padding:8px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06);z-index:10;}' +
-      '.header-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}' +
-      'select{font-size:13px;font-weight:600;padding:6px 10px;border-radius:6px;border:1px solid #cbd5e1;background:#f1f5f9;max-width:260px;}' +
-      '.badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:12px;background:#e2e8f0;color:#334155;}' +
-      '.score-banner{display:flex;align-items:center;gap:14px;background:#0f172a;color:#fff;padding:6px 14px;border-radius:8px;}' +
-      '.score-item{display:flex;flex-direction:column;align-items:center;line-height:1.1;}' +
-      '.score-label{font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:600;}' +
-      '.score-val{font-size:15px;font-weight:700;}' +
-      '.score-grade{font-size:17px;font-weight:800;color:#38bdf8;}' +
-      '.header-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}' +
-      'button{padding:7px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;border:none;}' +
-      'button:disabled{opacity:0.5;cursor:not-allowed;}' +
-      '.btn-ai{background:#7c3aed;color:#fff;}.btn-save{background:#0284c7;color:#fff;}.btn-approve{background:#16a34a;color:#fff;}' +
-      '.btn-lock{background:#dc2626;color:#fff;}.btn-sync{background:#059669;color:#fff;}.btn-sec{background:#e2e8f0;color:#334155;}' +
-      '.btn-pdf{background:#b91c1c;color:#fff;}' +
-      '.studio-body{display:flex;height:calc(100vh - 60px);overflow:hidden;}' +
-      '.left-panel{width:48%;min-width:400px;background:#1e293b;display:flex;flex-direction:column;overflow:hidden;}' +
-      '.viewer-bar{background:#334155;color:#fff;padding:6px 10px;font-size:11px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;}' +
-      '.file-tabs{display:flex;overflow-x:auto;gap:4px;padding:6px 10px;background:#0f172a;}' +
-      '.file-tab{padding:5px 10px;font-size:11px;font-weight:600;background:#334155;color:#e2e8f0;border-radius:4px;cursor:pointer;white-space:nowrap;}' +
-      '.file-tab.active{background:#2563eb;color:#fff;}' +
-      '.viewer-content{flex:1;overflow-y:auto;overflow-x:hidden;background:#0f172a;display:flex;flex-direction:column;align-items:center;padding:14px;gap:12px;}' +
-      '.embed-frame{width:100%;min-height:75vh;border:0;background:#fff;border-radius:4px;}' +
-      '.image-viewer{max-width:100%;border-radius:4px;}' +
-      '.right-panel{width:52%;flex:1;overflow-y:auto;padding:14px 18px 140px;}' +
-      '.criterion-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.05);padding:14px;margin-bottom:14px;}' +
-      '.crit-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #f1f5f9;padding-bottom:8px;margin-bottom:8px;}' +
-      '.crit-id-badge{font-size:11px;font-weight:700;background:#0f172a;color:#fff;padding:2px 7px;border-radius:4px;margin-right:6px;}' +
-      '.crit-name{font-size:14px;font-weight:700;}' +
-      '.crit-meta{font-size:11px;color:#64748b;margin-top:2px;}' +
-      '.grade-badge{font-size:14px;font-weight:800;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid;flex-shrink:0;}' +
-      '.grade-A{background:#dcfce7;color:#15803d;border-color:#15803d;}.grade-B{background:#dbeafe;color:#1d4ed8;border-color:#1d4ed8;}' +
-      '.grade-C{background:#fef3c7;color:#b45309;border-color:#b45309;}.grade-D{background:#ffedd5;color:#c2410c;border-color:#ea580c;}' +
-      '.grade-E{background:#fee2e2;color:#b91c1c;border-color:#b91c1c;}' +
-      '.explanation-box{font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;padding:6px 10px;border-radius:6px;color:#334155;margin-bottom:8px;}' +
-      '.md-box{background:#fffbeb;border:2px dashed #f59e0b;border-radius:6px;padding:8px 10px;display:flex;align-items:flex-start;gap:8px;margin-bottom:8px;font-size:12px;}' +
-      '.band-block{border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;overflow:hidden;}' +
-      '.band-header{background:#f8fafc;padding:6px 10px;font-size:11px;font-weight:700;color:#334155;}' +
-      '.band-items{padding:6px 10px;background:#fff;}' +
-      '.obs-row{display:flex;align-items:flex-start;gap:6px;font-size:11px;line-height:1.4;margin-bottom:5px;}' +
-      '.teacher-textarea{width:100%;height:55px;padding:6px;font-size:11px;border:1px solid #cbd5e1;border-radius:4px;font-family:inherit;margin-top:6px;}' +
-      '.feedback-dock{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #0f172a;padding:10px 18px;z-index:20;}' +
-      '.feedback-dock-body{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px;}' +
-      '.fb-text{width:100%;height:60px;padding:6px;font-size:11px;border:1px solid #cbd5e1;border-radius:4px;font-family:inherit;}' +
-      '.ai-hud{position:fixed;top:70px;right:20px;background:#0f172a;color:#fff;padding:14px 18px;border-radius:8px;font-size:12px;z-index:30;display:none;min-width:260px;box-shadow:0 4px 12px rgba(0,0,0,0.3);}' +
-      '</style></head><body>';
-
-    var headerHtml =
-      '<header>' +
-        '<div class="header-left">' +
-          '<label style="font-size:11px;font-weight:700;color:#475569;">STUDENT</label>' +
-          '<select id="stuSel" onchange="onStudentChanged()"><option value="">Loading submissions...</option></select>' +
-          '<span id="versionBadge" class="badge">v1</span>' +
-          '<span id="statusBadge" class="badge">New</span>' +
-        '</div>' +
-        '<div class="score-banner">' +
-          '<div class="score-item"><span class="score-label">Part A</span><span id="scA" class="score-val">0.0</span></div>' +
-          '<div class="score-item"><span class="score-label">Part B</span><span id="scB" class="score-val">0.0</span></div>' +
-          '<div class="score-item"><span class="score-label">Total /100</span><span id="scTot" class="score-val">0.0</span></div>' +
-          '<div class="score-item"><span class="score-label">Grade</span><span id="scG" class="score-grade">E</span></div>' +
-        '</div>' +
-        '<div class="header-actions">' +
-          '<button id="btnAiRun" class="btn-ai" onclick="runAi()">Run AI</button>' +
-          '<button class="btn-sec" onclick="openClassGrading()">Grade Class</button>' +
-          '<button class="btn-pdf" onclick="downloadReportPdf()">Report PDF</button>' +
-          '<button class="btn-save" onclick="saveDraft()">Save Draft</button>' +
-          '<button class="btn-approve" onclick="approve()">Approve</button>' +
-          '<button class="btn-lock" onclick="lockFinal()">Lock</button>' +
-          '<button class="btn-sync" onclick="syncClassroom()">Sync Classroom</button>' +
-        '</div>' +
-      '</header>';
-
-    var bodyHtml =
-      '<div class="studio-body">' +
-        '<div class="left-panel">' +
-          '<div class="viewer-bar">' +
-            '<span id="fileCountBadge">0 files</span>' +
-            '<span id="slideCounter"></span>' +
-          '</div>' +
-          '<div id="fileTabs" class="file-tabs"></div>' +
-          '<div id="vContent" class="viewer-content"><div style="color:#94a3b8;margin-top:40px;">No file selected</div></div>' +
-        '</div>' +
-        '<div class="right-panel">' +
-          '<div id="critContainer"></div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="ai-hud" id="aiHud">' +
-        '<div id="hudStatus" style="font-weight:700;">Scanning...</div>' +
-        '<div id="hudDetail" style="font-size:11px;color:#94a3b8;margin-top:6px;font-family:monospace;"></div>' +
-      '</div>' +
-      '<div class="feedback-dock">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-          '<span style="font-size:13px;font-weight:700;">Student Feedback Preview</span>' +
-          '<button class="btn-sec" onclick="genFb()" style="font-size:11px;">Generate AI Feedback</button>' +
-        '</div>' +
-        '<div class="feedback-dock-body">' +
-          '<div><div style="font-size:11px;font-weight:700;margin-bottom:4px;">What went well</div><textarea id="fbW" class="fb-text"></textarea></div>' +
-          '<div><div style="font-size:11px;font-weight:700;margin-bottom:4px;">Areas for improvement</div><textarea id="fbI" class="fb-text"></textarea></div>' +
-          '<div><div style="font-size:11px;font-weight:700;margin-bottom:4px;">Goals for next assessment</div><textarea id="fbG" class="fb-text"></textarea></div>' +
-        '</div>' +
-      '</div>';
-
-    var scriptHtml =
-      '<script>' +
-      'var state = { criteria: [], submissions: [], currentSubId: null, detail: null, files: [], fileIdx: 0, slideNum: 1 };' +
-      'var GRADE_WEIGHTS = { A: 1.0, B: 0.875, C: 0.70, D: 0.575, E: 0.25 };' +
-
-      'window.onload = function() {' +
-        'window.addEventListener("message", function(event) {' +
-          'if (event.data && event.data.type === "VOICE_TRANSCRIPT") {' +
-            'var t = document.getElementById("note-" + event.data.criterionId);' +
-            'if (t) { t.value = (t.value ? t.value + " " : "") + event.data.transcript; onCritNoteChanged(event.data.criterionId); }' +
-          '}' +
-        '});' +
-        'loadBootstrapData(null);' +
-      '};' +
-
-      'function loadBootstrapData(targetSubId) {' +
-        'google.script.run.withSuccessHandler(function(res) {' +
-          'if (!res) { showStudioError("No response from server."); return; }' +
-          'state.criteria = res.criteria || [];' +
-          'state.submissions = res.submissions || [];' +
-          'state.gradeWeights = res.gradeWeights || { A: 1.0, B: 0.875, C: 0.70, D: 0.575, E: 0.25 };' +
-        'state.overallGradeBands = res.overallGradeBands || [{ letter: "A", min: 85 }, { letter: "B", min: 75 }, { letter: "C", min: 65 }, { letter: "D", min: 50 }, { letter: "E", min: 0 }];' +
-          'var sel = document.getElementById("stuSel");' +
-          'sel.innerHTML = "";' +
-          'if (state.submissions.length === 0) {' +
-            'sel.innerHTML = "<option value=\\"\\">-- No submissions imported --</option>";' +
-            'document.getElementById("critContainer").innerHTML = "<div style=\\"padding:30px;text-align:center;color:#64748b;\\"><h3>No Student Submissions Found</h3><p>Close this window, then run Classroom &gt; Import/Refresh Submissions.</p></div>";' +
-            'return;' +
-          '}' +
-          'state.submissions.forEach(function(s) {' +
-            'var o = document.createElement("option");' +
-            'o.value = s.SubmissionRecordID;' +
-            'o.textContent = s.StudentName + " (v" + s.SubmissionVersion + " - " + s.Status + ")";' +
-            'if (s.SubmissionRecordID === res.selectedSubmissionId) o.selected = true;' +
-            'sel.appendChild(o);' +
-          '});' +
-          'state.currentSubId = sel.value;' +
-          'if (res.submissionDetail) { renderSubmission(res.submissionDetail); }' +
-        '}).withFailureHandler(function(err) {' +
-          'showStudioError(err && err.message ? err.message : String(err));' +
-        '}).apiGetBootstrapData(targetSubId);' +
-      '}' +
-
-      'function showStudioError(msg) {' +
-        'var el = document.getElementById("critContainer");' +
-        'if (el) el.innerHTML = "<div style=\\"padding:20px;color:#b91c1c;background:#fee2e2;border-radius:8px;\\"><b>Error loading studio data</b><br>" + msg + "</div>";' +
-      '}' +
-
-      'function onStudentChanged() {' +
-        'state.currentSubId = document.getElementById("stuSel").value;' +
-        'state.fileIdx = 0; state.slideNum = 1;' +
-        'google.script.run.withSuccessHandler(renderSubmission).withFailureHandler(function(err){ showStudioError(err.message); }).apiGetSubmissionDetail(state.currentSubId);' +
-      '}' +
-
-      'function renderSubmission(detail) {' +
-        'state.detail = detail;' +
-        'state.files = detail.files || [];' +
-        'state.fileIdx = 0;' +
-        'document.getElementById("versionBadge").textContent = "v" + detail.submission.SubmissionVersion;' +
-        'document.getElementById("statusBadge").textContent = detail.submission.Status;' +
-        'renderFileTabs();' +
-        'renderCriteriaCards();' +
-        'var fb = detail.feedback || {};' +
-        'document.getElementById("fbW").value = fb.whatWentWell || "";' +
-        'document.getElementById("fbI").value = fb.areasForImprovement || "";' +
-        'document.getElementById("fbG").value = fb.goalsForNextAssessment || "";' +
-        'recalculateOverallScore();' +
-      '}' +
-
-      'function renderFileTabs() {' +
-        'var tabs = document.getElementById("fileTabs");' +
-        'tabs.innerHTML = "";' +
-        'var files = state.files;' +
-        'document.getElementById("fileCountBadge").textContent = files.length + " file(s)";' +
-        'if (!files.length) {' +
-          'document.getElementById("vContent").innerHTML = "<div style=\\"color:#94a3b8;margin-top:40px;\\">No files attached</div>";' +
-          'return;' +
-        '}' +
-        'files.forEach(function(f, idx) {' +
-          'var tab = document.createElement("div");' +
-          'tab.className = "file-tab" + (idx === state.fileIdx ? " active" : "");' +
-          'tab.textContent = f.FileName || ("File " + (idx + 1));' +
-          'tab.onclick = function() { state.fileIdx = idx; state.slideNum = 1; renderFileTabs(); };' +
-          'tabs.appendChild(tab);' +
-        '});' +
-        'renderActiveFile();' +
-      '}' +
-
-      'function renderActiveFile() {' +
-        'var viewer = document.getElementById("vContent");' +
-        'var f = state.files[state.fileIdx];' +
-        'if (!f || !f.DriveFileID) { viewer.innerHTML = "<div style=\\"color:#94a3b8;margin-top:40px;\\">File unavailable</div>"; return; }' +
-        'var mime = (f.MimeType || "").toLowerCase();' +
-        'document.getElementById("slideCounter").textContent = "";' +
-        'if (mime.indexOf("presentation") !== -1) {' +
-          'viewer.innerHTML = "<iframe class=\\"embed-frame\\" src=\\"https://docs.google.com/presentation/d/" + f.DriveFileID + "/embed?rm=minimal\\"></iframe>";' +
-        '} else if (mime.indexOf("document") !== -1) {' +
-          'viewer.innerHTML = "<iframe class=\\"embed-frame\\" src=\\"https://docs.google.com/document/d/" + f.DriveFileID + "/preview\\"></iframe>";' +
-        '} else if (mime.indexOf("pdf") !== -1) {' +
-          'viewer.innerHTML = "<iframe class=\\"embed-frame\\" src=\\"https://drive.google.com/file/d/" + f.DriveFileID + "/preview\\"></iframe>";' +
-        '} else if (mime.indexOf("image") !== -1) {' +
-          'viewer.innerHTML = "<img class=\\"image-viewer\\" src=\\"https://drive.google.com/thumbnail?id=" + f.DriveFileID + "&sz=w1600\\">";' +
-        '} else {' +
-          'viewer.innerHTML = "<div style=\\"color:#fff;\\">Unsupported preview &mdash; <a href=\\"" + (f.AlternateLink || "#") + "\\" target=\\"_blank\\" style=\\"color:#38bdf8;\\">Open in Drive</a></div>";' +
-        '}' +
-      '}' +
-
-      'function getCriterion(cid) {' +
-        'for (var i = 0; i < state.criteria.length; i++) { if (state.criteria[i].criterionId === cid) return state.criteria[i]; }' +
-        'return null;' +
-      '}' +
-
-      'function renderCriteriaCards() {' +
-        'var container = document.getElementById("critContainer");' +
-        'container.innerHTML = "";' +
-        'state.criteria.forEach(function(crit) {' +
-          'var cid = crit.criterionId;' +
-          'var cd = (state.detail && state.detail.criteriaMap && state.detail.criteriaMap[cid]) ? state.detail.criteriaMap[cid] : { checkboxes: {}, derivedGrade: "E", explanation: "" };' +
-          'var card = document.createElement("div");' +
-          'card.className = "criterion-card";' +
-          'var html = "";' +
-          'html += "<div class=\\"crit-header\\"><div><span class=\\"crit-id-badge\\">" + cid + "</span><span class=\\"crit-name\\">" + crit.title + "</span><div class=\\"crit-meta\\">" + crit.part + " &bull; /" + crit.maxMarks + " Marks</div></div>";' +
-          'html += "<div class=\\"grade-badge grade-" + (cd.derivedGrade || "E") + "\\" id=\\"badge-" + cid + "\\">" + (cd.derivedGrade || "E") + "</div></div>";' +
-          'html += "<div class=\\"explanation-box\\" id=\\"exp-" + cid + "\\">" + (cd.explanation || "") + "</div>";' +
-          'var mdChecked = !!(cd.checkboxes && cd.checkboxes[crit.mdOverride.id]);' +
-          'html += "<div class=\\"md-box\\"><input type=\\"checkbox\\" id=\\"chk-" + crit.mdOverride.id + "\\" " + (mdChecked ? "checked" : "") + " onchange=\\"onCritCheckToggled(this,\'" + cid + "\',\'" + crit.mdOverride.id + "\')\\"><div><b>Distinct A Override</b> " + crit.mdOverride.text + "</div></div>";' +
-          '["A","B","C","D","E"].forEach(function(bandName) {' +
-            'var items = crit.bands[bandName] || [];' +
-            'html += "<div class=\\"band-block\\"><div class=\\"band-header\\">" + bandName + " Band</div><div class=\\"band-items\\">";' +
-            'items.forEach(function(it) {' +
-              'var checked = !!(cd.checkboxes && cd.checkboxes[it[0]]);' +
-              'html += "<div class=\\"obs-row\\"><input type=\\"checkbox\\" id=\\"chk-" + it[0] + "\\" " + (checked ? "checked" : "") + " onchange=\\"onCritCheckToggled(this,\'" + cid + "\',\'" + it[0] + "\')\\"><span>" + it[1] + "</span></div>";' +
-            '});' +
-            'html += "</div></div>";' +
-          '});' +
-          'html += "<div style=\\"display:flex;justify-content:space-between;align-items:center;margin-top:6px;\\"><label style=\\"font-size:11px;font-weight:700;\\">Observations / Notes</label><button class=\\"btn-sec\\" style=\\"font-size:11px;\\" onclick=\\"openVoice(\'" + cid + "\')\\">Dictate</button></div>";' +
-          'html += "<textarea id=\\"note-" + cid + "\\" class=\\"teacher-textarea\\" oninput=\\"onCritNoteChanged(\'" + cid + "\')\\">" + (cd.teacherWrittenNote || cd.teacherAudioTranscript || "") + "</textarea>";' +
-          'card.innerHTML = html;' +
-          'container.appendChild(card);' +
-        '});' +
-      '}' +
-
-'function nearestGradeLetterClient(score, weights) {' +
-        'var letters = ["A", "B", "C", "D", "E"];' +
-        'var sorted = letters.filter(function(l) { return weights[l] !== undefined; })' +
-          '.sort(function(a, b) { return weights[b] - weights[a]; });' +
-        'if (!sorted.length) return "E";' +
-        'for (var i = 0; i < sorted.length - 1; i++) {' +
-          'var upper = sorted[i], lower = sorted[i + 1];' +
-          'var midpoint = (weights[upper] + weights[lower]) / 2;' +
-          'if (score >= midpoint - 1e-9) return upper;' +
-        '}' +
-        'return sorted[sorted.length - 1];' +
-      '}' +
-
-      'function deriveGradeLocal(crit, checksMap) {' +
-        'var W = state.gradeWeights || { A: 1.0, B: 0.875, C: 0.70, D: 0.575, E: 0.25 };' +
-        'if (checksMap[crit.mdOverride.id]) return { grade: "A", score: W.A, explanation: "Distinct A evidence selected \\u2014 full marks awarded." };' +
-        'function frac(bandName) {' +
-          'var items = crit.bands[bandName] || [];' +
-          'if (!items.length) return 0;' +
-          'var ticked = 0;' +
-          'items.forEach(function(it) { if (checksMap[it[0]]) ticked++; });' +
-          'return ticked / items.length;' +
-        '}' +
-        'var score = W.E;' +
-        'score += frac("D") * (W.D - W.E);' +
-        'score += frac("C") * (W.C - W.D);' +
-        'score += frac("B") * (W.B - W.C);' +
-        'score += frac("A") * (W.A - W.B);' +
-        'if (score > W.A) score = W.A;' +
-        'var grade = nearestGradeLetterClient(score, W);' +
-        'return { grade: grade, score: score, explanation: "Weighted score: " + Math.round(score * 100) + "% \\u2192 nominal grade " + grade + "." };' +
-      '}' +
-
-      'function onCritCheckToggled(el, cid, checkId) {' +
-        'if (!state.detail || !state.detail.criteriaMap) return;' +
-        'var cd = state.detail.criteriaMap[cid];' +
-        'if (!cd) return;' +
-        'cd.checkboxes = cd.checkboxes || {};' +
-        'cd.checkboxes[checkId] = el.checked;' +
-        'var crit = getCriterion(cid);' +
-        'if (!crit) return;' +
-        'var calc = deriveGradeLocal(crit, cd.checkboxes);' +
-        'cd.derivedGrade = calc.grade;' +
-        'cd.explanation = calc.explanation;' +
-        'var badge = document.getElementById("badge-" + cid);' +
-        'if (badge) { badge.textContent = calc.grade; badge.className = "grade-badge grade-" + calc.grade; }' +
-        'var expEl = document.getElementById("exp-" + cid);' +
-        'if (expEl) expEl.textContent = calc.explanation;' +
-        'recalculateOverallScore();' +
-      '}' +
-
-      'function onCritNoteChanged(cid) {' +
-        'if (!state.detail || !state.detail.criteriaMap) return;' +
-        'var cd = state.detail.criteriaMap[cid];' +
-        'if (!cd) return;' +
-        'var el = document.getElementById("note-" + cid);' +
-        'if (el) cd.teacherWrittenNote = el.value;' +
-      '}' +
-
-      'function recalculateOverallScore() {' +
-        'if (!state.detail || !state.detail.criteriaMap) return;' +
-        'var W = state.gradeWeights || { A: 1.0, B: 0.875, C: 0.70, D: 0.575, E: 0.25 };' +
-        'var pA = 0, pB = 0;' +
-        'state.criteria.forEach(function(c) {' +
-          'var cd = state.detail.criteriaMap[c.criterionId];' +
-          'var score = (cd && cd.derivedScore !== undefined) ? cd.derivedScore : W.E;' +
-          'var marks = c.maxMarks * score;' +
-          'if (c.part === "Part A") pA += marks; else pB += marks;' +
-        '});' +
-        'var tot = pA + pB;' +
-        'var bands = state.overallGradeBands || [{ letter: "A", min: 85 }, { letter: "B", min: 75 }, { letter: "C", min: 65 }, { letter: "D", min: 50 }, { letter: "E", min: 0 }];' +
-        'var og = bands.length ? bands[bands.length - 1].letter : "E";' +
-        'for (var i = 0; i < bands.length; i++) { if (tot >= bands[i].min) { og = bands[i].letter; break; } }' +
-        'document.getElementById("scA").textContent = pA.toFixed(2);' +
-        'document.getElementById("scB").textContent = pB.toFixed(2);' +
-        'document.getElementById("scTot").textContent = tot.toFixed(1);' +
-        'document.getElementById("scG").textContent = og;' +
-      '}' +
-      
-      'function openVoice(cid) { google.script.run.openVoiceDictation(cid); }' +
-      'function openClassGrading() { google.script.run.openClassAiGradingRunner(); }' +
-
-      'function saveDraft() {' +
-        'if (!state.detail) return;' +
-        'var fb = { whatWentWell: document.getElementById("fbW").value, areasForImprovement: document.getElementById("fbI").value, goalsForNextAssessment: document.getElementById("fbG").value };' +
-        'google.script.run.withSuccessHandler(function(r) { alert(r.message); }).apiSaveAssessmentDraft(state.detail.assessmentId, state.currentSubId, state.detail.criteriaMap, fb);' +
-      '}' +
-
-      'function approve() {' +
-        'if (!state.detail) return;' +
-        'if (!confirm("Approve assessment and sync to marking sheet?")) return;' +
-        'var fb = { whatWentWell: document.getElementById("fbW").value, areasForImprovement: document.getElementById("fbI").value, goalsForNextAssessment: document.getElementById("fbG").value };' +
-        'google.script.run.withSuccessHandler(function(r) { alert(r.message); loadBootstrapData(state.currentSubId); }).apiApproveAssessment(state.detail.assessmentId, state.currentSubId, fb);' +
-      '}' +
-
-      'function lockFinal() {' +
-        'if (!state.detail) return;' +
-        'if (!confirm("Permanently lock this assessment? Reassessment will require a new version.")) return;' +
-        'google.script.run.withSuccessHandler(function(r) { alert(r.message); loadBootstrapData(state.currentSubId); }).apiLockAssessment(state.detail.assessmentId, state.currentSubId);' +
-      '}' +
-
-      'function syncClassroom() {' +
-        'if (!state.detail) return;' +
-        'if (!confirm("Sync calculated marks to Google Classroom?")) return;' +
-        'google.script.run.withSuccessHandler(function(r) { alert(r.message); }).apiSyncToClassroom(state.detail.assessmentId, state.currentSubId);' +
-      '}' +
-
-  'function runAi() {' +
-        'if (!state.detail) return;' +
-        'if (!confirm("Run Gemini AI evidence pass on this submission?")) return;' +
-        'var hud = document.getElementById("aiHud");' +
-        'var btn = document.getElementById("btnAiRun");' +
-        'hud.style.display = "block"; btn.disabled = true; btn.textContent = "Scanning...";' +
-
-        'var MIN_STEP_MS = 550;' +
-        'var filesToScan = (state.files || []).filter(function(f) { return f.DriveFileID; });' +
-        'var preparedFiles = [];' +
-        'var idx = 0;' +
-
-        'if (!filesToScan.length) {' +
-          'document.getElementById("hudStatus").textContent = "No files to scan";' +
-          'document.getElementById("hudDetail").textContent = "This submission has no eligible Drive attachments.";' +
-        '}' +
-
-        'function scanNext() {' +
-          'if (idx >= filesToScan.length) {' +
-            'document.getElementById("hudStatus").textContent = "Cross-checking rubric observables...";' +
-            'document.getElementById("hudDetail").textContent = "Sending " + preparedFiles.length + " reviewed file(s) to Gemini for analysis...";' +
-            'google.script.run.withSuccessHandler(function(r) {' +
-              'document.getElementById("hudStatus").textContent = "Audit complete!";' +
-              'document.getElementById("hudDetail").textContent = r.message;' +
-              'setTimeout(function() {' +
-                'hud.style.display = "none"; btn.disabled = false; btn.textContent = "Run AI";' +
-                'loadBootstrapData(state.currentSubId);' +
-              '}, 900);' +
-            '}).withFailureHandler(function(err) {' +
-              'hud.style.display = "none"; btn.disabled = false; btn.textContent = "Run AI";' +
-              'alert("AI Error: " + err.message);' +
-            '}).apiRunAiAssessmentWithFiles(state.currentSubId, preparedFiles);' +
-            'return;' +
-          '}' +
-
-          'var f = filesToScan[idx];' +
-          'document.getElementById("hudStatus").textContent = "Scanning file " + (idx + 1) + " of " + filesToScan.length;' +
-          'document.getElementById("hudDetail").textContent = "Reading from Drive: " + (f.FileName || ("attachment " + (idx + 1))) + "...";' +
-
-          'setTimeout(function() {' +
-            'var startedAt = Date.now();' +
-            'google.script.run.withSuccessHandler(function(result) {' +
-              'if (result && result.status === "reviewed") {' +
-                'preparedFiles.push(result);' +
-                'document.getElementById("hudDetail").textContent = "Reviewed: " + result.fileName;' +
-              '} else {' +
-                'document.getElementById("hudDetail").textContent = (result ? result.fileName : f.FileName) + " skipped (" + (result ? result.status : "error") + ").";' +
-              '}' +
-              'var elapsed = Date.now() - startedAt;' +
-              'var wait = Math.max(0, MIN_STEP_MS - elapsed);' +
-              'setTimeout(function() { idx++; scanNext(); }, wait);' +
-            '}).withFailureHandler(function(err) {' +
-              'document.getElementById("hudDetail").textContent = "Error reading " + f.FileName + ": " + err.message;' +
-              'var elapsed = Date.now() - startedAt;' +
-              'var wait = Math.max(0, MIN_STEP_MS - elapsed);' +
-              'setTimeout(function() { idx++; scanNext(); }, wait);' +
-            '}).apiPrepareSingleFileForAi(state.currentSubId, f.DriveFileID);' +
-          '}, 30);' +
-        '}' +
-
-        'scanNext();' +
-      '}' +
-
-      'function genFb() {' +
-        'if (!state.detail) return;' +
-        'google.script.run.withSuccessHandler(function(r) {' +
-          'if (r.success && r.feedback) {' +
-            'document.getElementById("fbW").value = r.feedback.whatWentWell || "";' +
-            'document.getElementById("fbI").value = r.feedback.areasForImprovement || "";' +
-            'document.getElementById("fbG").value = r.feedback.goalsForNextAssessment || "";' +
-          '} else { alert(r.message); }' +
-        '}).apiGenerateFeedback(state.detail.assessmentId, state.currentSubId);' +
-      '}' +
-
-      'function downloadReportPdf() {' +
-        'if (!state.currentSubId) return;' +
-        'var btn = event.target; btn.disabled = true; btn.textContent = "Generating...";' +
-        'google.script.run.withSuccessHandler(function(res) {' +
-          'btn.disabled = false; btn.textContent = "Report PDF";' +
-          'if (res.success) {' +
-            'var a = document.createElement("a"); a.href = res.dataUrl; a.download = res.fileName;' +
-            'document.body.appendChild(a); a.click(); document.body.removeChild(a);' +
-          '} else { alert("PDF Error: " + res.message); }' +
-        '}).withFailureHandler(function(err) {' +
-          'btn.disabled = false; btn.textContent = "Report PDF";' +
-          'alert("PDF generation error: " + err.message);' +
-        '}).apiGenerateAssessmentPdf(state.currentSubId);' +
-      '}' +
-      '<\/script></body></html>';
-
-    return head + headerHtml + bodyHtml + scriptHtml;
-  }
-
   return {
-    getAssessmentPdfReportHtml: getAssessmentPdfReportHtml,
-    getCourseworkPickerHtml: getCourseworkPickerHtml,
-    getClassBatchGradingHtml: getClassBatchGradingHtml,
-    getVoiceDictationHtml: getVoiceDictationHtml,
-    getAssessmentStudioHtml: getAssessmentStudioHtml
+    getAssessmentPdfReportHtml: getAssessmentPdfReportHtml
   };
 })();
 
@@ -2220,7 +1688,8 @@ function onOpen() {
 }
 
 function openAssessmentStudio() {
-  var html = HtmlService.createHtmlOutput(HtmlTemplates.getAssessmentStudioHtml())
+  var template = HtmlService.createTemplateFromFile('AssessmentStudio');
+  var html = template.evaluate()
     .setWidth(1600)
     .setHeight(1000)
     .setTitle('AI Assessment Studio — Year 9 Jewellery Design');
@@ -2228,7 +1697,8 @@ function openAssessmentStudio() {
 }
 
 function openClassAiGradingRunner() {
-  var html = HtmlService.createHtmlOutput(HtmlTemplates.getClassBatchGradingHtml())
+  var template = HtmlService.createTemplateFromFile('ClassBatchGrading');
+  var html = template.evaluate()
     .setWidth(680)
     .setHeight(420)
     .setTitle('Class-Wide AI Grading Runner');
@@ -2236,7 +1706,8 @@ function openClassAiGradingRunner() {
 }
 
 function openClassroomPicker() {
-  var html = HtmlService.createHtmlOutput(HtmlTemplates.getCourseworkPickerHtml())
+  var template = HtmlService.createTemplateFromFile('CourseworkPicker');
+  var html = template.evaluate()
     .setWidth(620)
     .setHeight(480)
     .setTitle('Select Classroom Course and Assignment');
@@ -2244,7 +1715,9 @@ function openClassroomPicker() {
 }
 
 function openVoiceDictation(criterionId) {
-  var html = HtmlService.createHtmlOutput(HtmlTemplates.getVoiceDictationHtml(criterionId || 'C01'))
+  var template = HtmlService.createTemplateFromFile('VoiceDictation');
+  template.criterionId = criterionId || 'C01';
+  var html = template.evaluate()
     .setWidth(420)
     .setHeight(360)
     .setTitle('Voice Dictation');
