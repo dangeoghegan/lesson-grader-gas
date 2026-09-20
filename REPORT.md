@@ -118,41 +118,62 @@ Transition from a **hardcoded, single-project grader** to a **universal, data-dr
 4.  **Multi-Judge Stress-Test / Calibration:** DeepSeek analyzes the extracted observables for semantic overlap and ambiguity (e.g., "Is Band B observable 2 logically distinct from Band C observable 1?").
 5.  **Teacher Review & Commit:** Saves to `CriteriaConfig` Google Sheet.
 
-### Scoring Algorithm
+### Scoring Algorithm & Worked Example
+
+**Example:**
+* Max Marks: `10`
+* 4 observables per band (A, B, C, D, E).
+* Ticked: 3 out of 4 observables in Band A (nothing else ticked).
+* Grade Weights: `A=1.0`, `B=0.875`, `C=0.70`, `D=0.575`, `E=0.25`
+
+**Calculation:**
+* Band A point value per observable: `10 * 1.0 / 4 = 2.5` points
+* Band B point value per observable: `10 * 0.875 / 4 = 2.1875` points
+* Total points: `3 * 2.5` = **7.5 points**
+* Percentage: `(7.5 / 10) * 100` = **75%**
+* Grade scale lookup: `75%` resolves exactly to **Grade B** based on the configured grade band ranges.
+
 ```javascript
-function calculateScore(criterionId, checkedObservableIds, rubricProfile, gradeWeights) {
+function calculateScore(criterionId, checkedObservableIds, rubricProfile, gradeWeights, overallGradeBands) {
     const criterion = rubricProfile.criteria.find(c => c.criterionId === criterionId);
 
-    // Distinct Mastery Override always yields full marks
+    // Distinct Mastery Override always yields full marks based on A weight
     if (checkedObservableIds.includes(criterion.masteryOverride.id)) {
-        return criterion.maxMarks * gradeWeights['A'];
+        return { grade: 'A', score: gradeWeights['A'], points: criterion.maxMarks * gradeWeights['A'] };
     }
 
-    const bandCalcs = {};
+    let totalPoints = 0;
     const bandNames = ['A', 'B', 'C', 'D', 'E'];
 
-    // Calculate fraction of observables met per band
     for (let bName of bandNames) {
         const items = criterion.bands[bName] || [];
-        let ticked = 0;
-        for (let item of items) {
-            if (checkedObservableIds.includes(item.id)) ticked++;
+        if (items.length > 0) {
+            let ticked = 0;
+            for (let item of items) {
+                if (checkedObservableIds.includes(item.id)) ticked++;
+            }
+
+            // Calculate points for this band's ticked observables
+            const bandWeight = gradeWeights[bName] !== undefined ? gradeWeights[bName] : 0.25;
+            const pointPerObs = (criterion.maxMarks * bandWeight) / items.length;
+            totalPoints += ticked * pointPerObs;
         }
-        bandCalcs[bName] = items.length > 0 ? (ticked / items.length) : 0;
     }
 
-    // Build deterministic score via additive weighted fractions
-    // Base score is 'E'
-    let score = gradeWeights['E'];
-    score += bandCalcs['D'] * (gradeWeights['D'] - gradeWeights['E']);
-    score += bandCalcs['C'] * (gradeWeights['C'] - gradeWeights['D']);
-    score += bandCalcs['B'] * (gradeWeights['B'] - gradeWeights['C']);
-    score += bandCalcs['A'] * (gradeWeights['A'] - gradeWeights['B']);
+    // Convert to percentage and lookup grade
+    const percentage = criterion.maxMarks > 0 ? (totalPoints / criterion.maxMarks) * 100 : 0;
+    let grade = overallGradeBands.length > 0 ? overallGradeBands[overallGradeBands.length - 1].letter : 'E';
 
-    // Cap at 'A'
-    if (score > gradeWeights['A']) score = gradeWeights['A'];
+    for (let k = 0; k < overallGradeBands.length; k++) {
+        if (percentage >= overallGradeBands[k].min) {
+            grade = overallGradeBands[k].letter;
+            break;
+        }
+    }
 
-    return criterion.maxMarks * score;
+    const score = criterion.maxMarks > 0 ? totalPoints / criterion.maxMarks : 0;
+
+    return { grade, score, points: totalPoints };
 }
 ```
 

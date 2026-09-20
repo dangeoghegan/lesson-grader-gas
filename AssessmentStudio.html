@@ -197,57 +197,55 @@ function renderCriteriaCards() {
   });
 }
 
-function nearestGradeLetterClient(score, weights) {
-  var letters = ["A", "B", "C", "D", "E"];
-  var sorted = letters.filter(function(l) {
-    return weights[l] !== undefined;
-  }).sort(function(a, b) {
-    return weights[b] - weights[a];
-  });
-  if (!sorted.length) return "E";
-  for (var i = 0; i < sorted.length - 1; i++) {
-    var upper = sorted[i],
-      lower = sorted[i + 1];
-    var midpoint = (weights[upper] + weights[lower]) / 2;
-    if (score >= midpoint - 1e-9) return upper;
-  }
-  return sorted[sorted.length - 1];
-}
-
 function deriveGradeLocal(crit, checksMap) {
-  var W = state.gradeWeights || {
-    A: 1.0,
-    B: 0.875,
-    C: 0.70,
-    D: 0.575,
-    E: 0.25
-  };
-  if (checksMap[crit.mdOverride.id]) return {
-    grade: "A",
-    score: W.A,
-    explanation: "Distinct A evidence selected \\u2014 full marks awarded."
-  };
+  var W = state.gradeWeights || { A: 1.0, B: 0.875, C: 0.70, D: 0.575, E: 0.25 };
+  var bands = state.overallGradeBands || [{ letter: "A", min: 85 }, { letter: "B", min: 75 }, { letter: "C", min: 65 }, { letter: "D", min: 50 }, { letter: "E", min: 0 }];
 
-  function frac(bandName) {
-    var items = crit.bands[bandName] || [];
-    if (!items.length) return 0;
-    var ticked = 0;
-    items.forEach(function(it) {
-      if (checksMap[it[0]]) ticked++;
-    });
-    return ticked / items.length;
+  if (checksMap[crit.mdOverride.id]) {
+    var aWeight = W.A !== undefined ? W.A : 1.0;
+    return {
+      grade: "A",
+      score: aWeight,
+      explanation: "Distinct A evidence selected \u2014 full marks awarded."
+    };
   }
-  var score = W.E;
-  score += frac("D") * (W.D - W.E);
-  score += frac("C") * (W.C - W.D);
-  score += frac("B") * (W.B - W.C);
-  score += frac("A") * (W.A - W.B);
-  if (score > W.A) score = W.A;
-  var grade = nearestGradeLetterClient(score, W);
+
+  var totalPoints = 0;
+  var bandNames = ["A", "B", "C", "D", "E"];
+
+  bandNames.forEach(function(bName) {
+    var items = crit.bands[bName] || [];
+    if (items.length > 0) {
+      var bandWeight = W[bName] !== undefined ? W[bName] : 0.25;
+      var pointPerObs = (crit.maxMarks * bandWeight) / items.length;
+
+      var ticked = 0;
+      items.forEach(function(it) {
+        if (checksMap[it[0]]) ticked++;
+      });
+      totalPoints += ticked * pointPerObs;
+    }
+  });
+
+  var percentage = crit.maxMarks > 0 ? (totalPoints / crit.maxMarks) * 100 : 0;
+
+  var grade = "E";
+  if (bands.length > 0) {
+    grade = bands[bands.length - 1].letter;
+  }
+  for (var k = 0; k < bands.length; k++) {
+    if (percentage >= bands[k].min) {
+      grade = bands[k].letter;
+      break;
+    }
+  }
+
+  var score = crit.maxMarks > 0 ? totalPoints / crit.maxMarks : 0;
+
   return {
     grade: grade,
     score: score,
-    explanation: "Weighted score: " + Math.round(score * 100) + "% \\u2192 nominal grade " + grade + "."
+    explanation: "Total points: " + totalPoints.toFixed(2) + " / " + crit.maxMarks + " (" + Math.round(percentage) + "%) \u2192 nominal grade " + grade + "."
   };
 }
 
