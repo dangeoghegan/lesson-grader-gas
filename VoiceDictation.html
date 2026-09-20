@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .header { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .status-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: #e2e8f0;
+      margin-bottom: 12px;
+    }
+    .status-listening { background: #fee2e2; color: #dc2626; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    textarea {
+      width: 100%;
+      height: 120px;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      box-sizing: border-box;
+      resize: vertical;
+      font-family: inherit;
+    }
+    .btn-group {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    button {
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-mic { background: #dc2626; color: #fff; }
+    .btn-send { background: #2563eb; color: #fff; }
+    .btn-close { background: #e2e8f0; color: #334155; }
+  </style>
+</head>
+<body>
+  <div class="header">Dictation for Criterion <?= criterionId ?></div>
+  <div id="statusBadge" class="status-badge">Ready (en-AU)</div>
+  <textarea id="transcriptText" placeholder="Click 'Start Dictating' and speak into your microphone..."></textarea>
+  <div class="btn-group">
+    <button id="btnToggleMic" class="btn-mic" onclick="toggleDictation()">🎙️ Start Dictating</button>
+    <div>
+      <button class="btn-send" onclick="sendTranscript()">Insert Note</button>
+      <button class="btn-close" onclick="google.script.host.close()">Cancel</button>
+    </div>
+  </div>
+
+  <script>
+    var criterionId = "<?= criterionId ?>";
+    var recognition = null;
+    var isListening = false;
+
+    window.onload = function() {
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        document.getElementById('statusBadge').textContent = 'Web Speech API unsupported in this browser';
+        document.getElementById('btnToggleMic').disabled = true;
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-AU';
+
+      recognition.onstart = function() {
+        isListening = true;
+        document.getElementById('statusBadge').textContent = 'Listening (en-AU)...';
+        document.getElementById('statusBadge').className = 'status-badge status-listening';
+        document.getElementById('btnToggleMic').textContent = '⏹️ Stop Dictating';
+      };
+
+      recognition.onresult = function(event) {
+        var transcript = '';
+        for (var i = event.resultIndex; i < event.results.length; ++i) {
+          transcript += event.results[i][0].transcript;
+        }
+        document.getElementById('transcriptText').value = transcript;
+      };
+
+      recognition.onerror = function(event) {
+        document.getElementById('statusBadge').textContent = 'Error: ' + event.error;
+        stopDictation();
+      };
+
+      recognition.onend = function() {
+        stopDictation();
+      };
+    };
+
+    function toggleDictation() {
+      if (isListening) {
+        if (recognition) recognition.stop();
+        stopDictation();
+      } else {
+        if (recognition) {
+          try {
+            recognition.start();
+          } catch(e) {
+            console.error(e);
+          }
+        }
+      }
+    }
+
+    function stopDictation() {
+      isListening = false;
+      document.getElementById('statusBadge').textContent = 'Idle';
+      document.getElementById('statusBadge').className = 'status-badge';
+      document.getElementById('btnToggleMic').textContent = '🎙️ Start Dictating';
+    }
+
+    function sendTranscript() {
+      var text = document.getElementById('transcriptText').value;
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'VOICE_TRANSCRIPT',
+          criterionId: criterionId,
+          transcript: text
+        }, '*');
+      }
+      google.script.host.close();
+    }
+  </script>
+</body>
+</html>
