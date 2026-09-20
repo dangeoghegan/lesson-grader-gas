@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title>AI Assessment Studio — Year 9 Jewellery Design</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg-main: #f8fafc;
+      --panel-bg: #ffffff;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --gold-border: #f59e0b;
+      --gold-bg: #fffbeb;
+      --green-badge: #15803d;
+      --green-bg: #dcfce7;
+      --blue-badge: #1d4ed8;
+      --blue-bg: #dbeafe;
+      --amber-badge: #b45309;
+      --amber-bg: #fef3c7;
+      --red-badge: #b91c1c;
+      --red-bg: #fee2e2;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg-main);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border-color);
+      padding: 10px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .student-picker-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .student-select {
+      font-size: 14px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: #f1f5f9;
+      color: #0f172a;
+      max-width: 260px;
+    }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-class { background: #e0e7ff; color: #3730a3; }
+    .badge-status { background: var(--blue-bg); color: var(--blue-badge); }
+    .badge-locked { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+    .badge-approved { background: var(--green-bg); color: var(--green-badge); }
+
+    .score-banner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #0f172a;
+      color: #ffffff;
+      padding: 6px 14px;
+      border-radius: 8px;
+    }
+
+    .score-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.1;
+    }
+    .score-label { font-size: 9px; text-transform: uppercase; color: #94a3b8; font-weight: 600; }
+    .score-val { font-size: 16px; font-weight: 700; }
+    .score-grade { font-size: 18px; font-weight: 800; color: #38bdf8; }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button {
+      padding: 7px 13px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-ai { background: #7c3aed; color: #fff; }
+    .btn-ai:hover:not(:disabled) { background: #6d28d9; }
+    .btn-save { background: #0284c7; color: #fff; }
+    .btn-save:hover:not(:disabled) { background: #0369a1; }
+    .btn-approve { background: #16a34a; color: #fff; }
+    .btn-approve:hover:not(:disabled) { background: #15803d; }
+    .btn-lock { background: #dc2626; color: #fff; }
+    .btn-lock:hover:not(:disabled) { background: #b91c1c; }
+    .btn-sync { background: #059669; color: #fff; }
+    .btn-sync:hover:not(:disabled) { background: #047857; }
+    .btn-secondary { background: #e2e8f0; color: #334155; border-color: #cbd5e1; }
+    .btn-secondary:hover:not(:disabled) { background: #cbd5e1; }
+
+    .studio-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .left-panel {
+      width: 48%;
+      min-width: 420px;
+      background: #ffffff;
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .viewer-header {
+      padding: 8px 14px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .file-tabs {
+      display: flex;
+      overflow-x: auto;
+      gap: 4px;
+      padding: 6px 10px;
+      background: #f1f5f9;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .file-tab {
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .file-tab.active {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #2563eb;
+    }
+
+    .viewer-content {
+      flex: 1;
+      position: relative;
+      background: #334155;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .embed-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #ffffff;
+    }
+
+    .image-viewer {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      padding: 10px;
+    }
+
+    .viewer-fallback {
+      background: #ffffff;
+      padding: 24px;
+      border-radius: 8px;
+      max-width: 80%;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+    }
+
+    .right-panel {
+      width: 52%;
+      flex: 1;
+      background: var(--bg-main);
+      overflow-y: auto;
+      padding: 16px 20px 120px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .criterion-card {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .criterion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 10px;
+    }
+
+    .crit-id-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      background: #0f172a;
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-right: 6px;
+    }
+    .crit-name { font-size: 15px; font-weight: 700; color: #0f172a; }
+    .crit-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    .grade-badge-lg {
+      font-size: 16px;
+      font-weight: 800;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .grade-A { background: var(--green-bg); color: var(--green-badge); border: 2px solid var(--green-badge); }
+    .grade-B { background: var(--blue-bg); color: var(--blue-badge); border: 2px solid var(--blue-badge); }
+    .grade-C { background: var(--amber-bg); color: var(--amber-badge); border: 2px solid var(--amber-badge); }
+    .grade-D { background: #ffedd5; color: #c2410c; border: 2px solid #ea580c; }
+    .grade-E { background: var(--red-bg); color: var(--red-badge); border: 2px solid var(--red-badge); }
+
+    .explanation-box {
+      font-size: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      color: #334155;
+      font-family: monospace;
+    }
+
+    .md-override-box {
+      background: var(--gold-bg);
+      border: 2px dashed var(--gold-border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .md-checkbox {
+      margin-top: 3px;
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+      accent-color: #d97706;
+    }
+
+    .band-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .band-header {
+      background: #f8fafc;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .band-items {
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #ffffff;
+    }
+    .observable-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .teacher-textarea {
+      width: 100%;
+      height: 60px;
+      padding: 8px;
+      font-size: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      resize: vertical;
+      font-family: inherit;
+    }
+
+    .feedback-dock {
+      background: #ffffff;
+      border-top: 2px solid #0f172a;
+      padding: 12px 18px;
+      z-index: 50;
+      flex-shrink: 0;
+    }
+    .feedback-dock-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .fb-textarea {
+      width: 100%;
+      height: 75px;
+      padding: 8px;
+      font-size: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-family: inherit;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <div class="student-picker-container">
+        <label for="studentSelect" style="font-size:12px;font-weight:700;color:var(--text-muted)">STUDENT:</label>
+        <select id="studentSelect" class="student-select" onchange="onStudentSelected()">
+          <option value="">Loading submissions...</option>
+        </select>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-class">9DAT1</span>
+        <span id="versionBadge" class="badge badge-locked">v1</span>
+        <span id="statusBadge" class="badge badge-status">New</span>
+      </div>
+    </div>
+
+    <div class="score-banner">
+      <div class="score-item"><span class="score-label">Part A</span><span id="bannerPartA" class="score-val">0.0</span></div>
+      <div class="score-item"><span class="score-label">Part B</span><span id="bannerPartB" class="score-val">0.0</span></div>
+      <div class="score-item"><span class="score-label">Total /100</span><span id="bannerTotal" class="score-val">0.0</span></div>
+      <div class="score-item"><span class="score-label">Grade</span><span id="bannerGrade" class="score-grade">E</span></div>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn-ai" onclick="runAiAssessment()"><span>✨</span> Run AI</button>
+      <button class="btn-save" onclick="saveDraft()"><span>💾</span> Save Draft</button>
+      <button class="btn-approve" onclick="confirmApprove()"><span>✅</span> Approve</button>
+      <button class="btn-lock" onclick="confirmLock()"><span>🔒</span> Lock</button>
+      <button class="btn-sync" onclick="confirmSync()"><span>🔄</span> Sync Classroom</button>
+    </div>
+  </header>
+
+  <div class="studio-container">
+    <div class="left-panel">
+      <div class="viewer-header">
+        <span style="font-size:12px;font-weight:700;color:var(--text-muted);">ATTACHMENTS</span>
+        <span id="fileCountBadge" style="font-size:11px;color:#64748b;">0 files</span>
+      </div>
+      <div id="fileTabs" class="file-tabs"></div>
+      <div id="viewerContent" class="viewer-content">
+        <div class="viewer-fallback"><h4>No File Selected</h4></div>
+      </div>
+    </div>
+
+    <div class="right-panel" id="criteriaWorkflow">
+      <div id="criteriaCardsContainer"></div>
+    </div>
+  </div>
+
+  <div class="feedback-dock">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:13px;font-weight:700;">Student Feedback Preview</span>
+      <button class="btn-secondary" onclick="generateFeedback()"><span>✨</span> Generate AI Feedback</button>
+    </div>
+    <div class="feedback-dock-body">
+      <div><div style="font-size:11px;font-weight:700;margin-bottom:4px;">What went well</div><textarea id="fbWhatWentWell" class="fb-textarea"></textarea></div>
+      <div><div style="font-size:11px;font-weight:700;margin-bottom:4px;">Areas for improvement</div><textarea id="fbImprovement" class="fb-textarea"></textarea></div>
+      <div><div style="font-size:11px;font-weight:700;margin-bottom:4px;">Goals for next assessment</div><textarea id="fbGoals" class="fb-textarea"></textarea></div>
+    </div>
+  </div>
+
+  <script>
+    var state = { criteria: [], submissions: [], currentSubId: null, submissionDetail: null, activeFileIndex: 0 };
+    var GRADE_WEIGHTS = { 'A': 1.0, 'B': 0.875, 'C': 0.70, 'D': 0.575, 'E': 0.25 };
+    var CRIT_MAX_MARKS = { C01: 5, C02: 10, C03: 5, C04: 10, C05: 5, C06: 10, C07: 10, C08: 5, C09: 10, C10: 10, C11: 10, C12: 10 };
+
+    window.onload = function() {
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'VOICE_TRANSCRIPT') {
+          var cid = event.data.criterionId;
+          var t = document.getElementById('note-' + cid);
+          if (t) { t.value = (t.value ? t.value.trim() + ' ' : '') + event.data.transcript.trim(); onNoteChanged(cid); }
+        }
+      });
+      loadBootstrapData();
+    };
+
+    function loadBootstrapData(targetSubId) {
+      google.script.run.withSuccessHandler(function(res) {
+        state.criteria = res.criteria || [];
+        state.submissions = res.submissions || [];
+        var sel = document.getElementById('studentSelect');
+        sel.innerHTML = '';
+        state.submissions.forEach(function(s) {
+          var opt = document.createElement('option');
+          opt.value = s.SubmissionRecordID;
+          opt.textContent = s.StudentName + ' (v' + s.SubmissionVersion + ' - ' + s.Status + ')';
+          if (s.SubmissionRecordID === res.selectedSubmissionId) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        state.currentSubId = sel.value;
+        if (res.submissionDetail) renderSubmission(res.submissionDetail);
+      }).apiGetBootstrapData(targetSubId);
+    }
+
+    function onStudentSelected() {
+      state.currentSubId = document.getElementById('studentSelect').value;
+      google.script.run.withSuccessHandler(renderSubmission).apiGetSubmissionDetail(state.currentSubId);
+    }
+
+    function renderSubmission(detail) {
+      state.submissionDetail = detail;
+      document.getElementById('versionBadge').textContent = 'v' + detail.submission.SubmissionVersion;
+      document.getElementById('statusBadge').textContent = detail.submission.Status;
+      renderFileTabs(detail.files);
+      renderCriteriaCards(detail.criteriaMap);
+      var fb = detail.feedback || {};
+      document.getElementById('fbWhatWentWell').value = fb.whatWentWell || '';
+      document.getElementById('fbImprovement').value = fb.areasForImprovement || '';
+      document.getElementById('fbGoals').value = fb.goalsForNextAssessment || '';
+      recalculateOverallScore();
+    }
+
+    function renderFileTabs(files) {
+      var tabsContainer = document.getElementById('fileTabs');
+      tabsContainer.innerHTML = '';
+      if (!files || !files.length) {
+        document.getElementById('fileCountBadge').textContent = '0 files';
+        document.getElementById('viewerContent').innerHTML = '<div class="viewer-fallback"><h4>No Files</h4></div>';
+        return;
+      }
+      document.getElementById('fileCountBadge').textContent = files.length + ' file(s)';
+      files.forEach(function(f, idx) {
+        var tab = document.createElement('div');
+        tab.className = 'file-tab' + (idx === state.activeFileIndex ? ' active' : '');
+        tab.textContent = f.FileName;
+        tab.onclick = function() { state.activeFileIndex = idx; renderFileTabs(files); };
+        tabsContainer.appendChild(tab);
+      });
+      var f = files[state.activeFileIndex];
+      var viewer = document.getElementById('viewerContent');
+      if (f.MimeType && f.MimeType.indexOf('image') !== -1) {
+        viewer.innerHTML = '<img class="image-viewer" src="https://drive.google.com/thumbnail?id=' + f.DriveFileID + '&sz=w1600" />';
+      } else {
+        viewer.innerHTML = '<iframe class="embed-frame" src="https://drive.google.com/file/d/' + f.DriveFileID + '/preview"></iframe>';
+      }
+    }
+
+    function renderCriteriaCards(criteriaMap) {
+      var container = document.getElementById('criteriaCardsContainer');
+      container.innerHTML = '';
+      state.criteria.forEach(function(crit) {
+        var cid = crit.criterionId;
+        var cData = criteriaMap[cid] || { checkboxes: {}, derivedGrade: 'E' };
+        var card = document.createElement('div');
+        card.className = 'criterion-card';
+        card.innerHTML =
+          '<div class="criterion-header">' +
+            '<div><span class="crit-id-badge">' + cid + '</span> <span class="crit-name">' + crit.title + '</span><div class="crit-meta">' + crit.part + ' • /' + crit.maxMarks + ' Marks</div></div>' +
+            '<div id="gradeBadge-' + cid + '" class="grade-badge-lg grade-' + cData.derivedGrade + '">' + cData.derivedGrade + '</div>' +
+          '</div>' +
+          '<div class="explanation-box" id="expBox-' + cid + '">' + (cData.explanation || '') + '</div>' +
+          '<div class="md-override-box"><input type="checkbox" id="chk-' + crit.mdOverride.id + '" class="md-checkbox" ' + (cData.checkboxes[crit.mdOverride.id] ? 'checked' : '') + ' onchange="onCheckboxToggled(\'' + cid + '\', \'' + crit.mdOverride.id + '\')" /><div><b>⭐ Distinct A Override:</b> ' + crit.mdOverride.text + '</div></div>';
+
+        ['A', 'B', 'C', 'D', 'E'].forEach(function(bName) {
+          var items = crit.bands[bName] || [];
+          var bBlock = document.createElement('div');
+          bBlock.className = 'band-block';
+          var bHeader = '<div class="band-header"><span>' + bName + ' Band</span></div><div class="band-items">';
+          items.forEach(function(it) {
+            bHeader += '<div class="observable-row"><input type="checkbox" id="chk-' + it[0] + '" ' + (cData.checkboxes[it[0]] ? 'checked' : '') + ' onchange="onCheckboxToggled(\'' + cid + '\', \'' + it[0] + '\')" /><span>' + it[1] + '</span></div>';
+          });
+          bBlock.innerHTML = bHeader + '</div>';
+          card.appendChild(bBlock);
+        });
+
+        var notesDiv = document.createElement('div');
+        notesDiv.innerHTML =
+          '<div style="display:flex;justify-content:space-between;margin-top:6px;align-items:center;">' +
+            '<span style="font-size:12px;font-weight:700;">Observations & Notes</span>' +
+            '<button class="btn-secondary" style="font-size:11px;" onclick="google.script.run.openVoiceDictation(\'' + cid + '\')">🎤 Dictate</button>' +
+          '</div>' +
+          '<textarea id="note-' + cid + '" class="teacher-textarea" oninput="onNoteChanged(\'' + cid + '\')">' + (cData.teacherWrittenNote || cData.teacherAudioTranscript || '') + '</textarea>';
+        card.appendChild(notesDiv);
+        container.appendChild(card);
+      });
+    }
+
+    function onCheckboxToggled(cid, checkId) {
+      var cData = state.submissionDetail.criteriaMap[cid];
+      cData.checkboxes[checkId] = document.getElementById('chk-' + checkId).checked;
+      var crit = state.criteria.find(function(c) { return c.criterionId === cid; });
+      var calc = deriveGradeLocal(crit, cData.checkboxes);
+      cData.derivedGrade = calc.grade;
+      cData.explanation = calc.explanation;
+      var badge = document.getElementById('gradeBadge-' + cid);
+      badge.textContent = calc.grade;
+      badge.className = 'grade-badge-lg grade-' + calc.grade;
+      document.getElementById('expBox-' + cid).textContent = calc.explanation;
+      recalculateOverallScore();
+    }
+
+    function onNoteChanged(cid) {
+      state.submissionDetail.criteriaMap[cid].teacherWrittenNote = document.getElementById('note-' + cid).value;
+    }
+
+    function deriveGradeLocal(crit, checksMap) {
+      if (checksMap[crit.mdOverride.id]) return { grade: 'A', explanation: 'Derived grade: A — Distinct A override selected.' };
+      var bands = ['A', 'B', 'C', 'D', 'E'];
+      for (var b = 0; b < bands.length; b++) {
+        var items = crit.bands[bands[b]] || [];
+        var ticked = 0;
+        items.forEach(function(it) { if (checksMap[it[0]]) ticked++; });
+        var req = (bands[b] === 'A') ? items.length : Math.ceil(items.length * 2 / 3);
+        if (ticked >= req) return { grade: bands[b], explanation: 'Derived grade: ' + bands[b] + ' (' + ticked + '/' + items.length + ' met).' };
+      }
+      return { grade: 'E', explanation: 'Derived grade: E — Minimum evidence incomplete.' };
+    }
+
+    function recalculateOverallScore() {
+      var cMap = state.submissionDetail.criteriaMap;
+      var pA = 0, pB = 0;
+      state.criteria.forEach(function(c) {
+        var g = cMap[c.criterionId] ? cMap[c.criterionId].derivedGrade : 'E';
+        var marks = c.maxMarks * (GRADE_WEIGHTS[g] || 0.25);
+        if (c.part === 'Part A') pA += marks; else pB += marks;
+      });
+      var tot = pA + pB;
+      var og = 'E';
+      if (tot >= 85) og = 'A'; else if (tot >= 75) og = 'B'; else if (tot >= 65) og = 'C'; else if (tot >= 50) og = 'D';
+      document.getElementById('bannerPartA').textContent = pA.toFixed(2);
+      document.getElementById('bannerPartB').textContent = pB.toFixed(2);
+      document.getElementById('bannerTotal').textContent = tot.toFixed(1);
+      document.getElementById('bannerGrade').textContent = og;
+    }
+
+    function saveDraft() {
+      var fb = { whatWentWell: document.getElementById('fbWhatWentWell').value, areasForImprovement: document.getElementById('fbImprovement').value, goalsForNextAssessment: document.getElementById('fbGoals').value };
+      google.script.run.withSuccessHandler(function(r) { alert(r.message); }).apiSaveAssessmentDraft(state.submissionDetail.assessmentId, state.currentSubId, state.submissionDetail.criteriaMap, fb);
+    }
+
+    function confirmApprove() {
+      if (!confirm('Approve assessment and sync to 9DAT1 Marking?')) return;
+      var fb = { whatWentWell: document.getElementById('fbWhatWentWell').value, areasForImprovement: document.getElementById('fbImprovement').value, goalsForNextAssessment: document.getElementById('fbGoals').value };
+      google.script.run.withSuccessHandler(function(r) { alert(r.message); loadBootstrapData(state.currentSubId); }).apiApproveAssessment(state.submissionDetail.assessmentId, state.currentSubId, fb);
+    }
+
+    function confirmLock() {
+      if (!confirm('Permanently lock assessment?')) return;
+      google.script.run.withSuccessHandler(function(r) { alert(r.message); loadBootstrapData(state.currentSubId); }).apiLockAssessment(state.submissionDetail.assessmentId, state.currentSubId);
+    }
+
+    function confirmSync() {
+      if (!confirm('Sync marks to Google Classroom?')) return;
+      google.script.run.withSuccessHandler(function(r) { alert(r.message); }).apiSyncToClassroom(state.submissionDetail.assessmentId, state.currentSubId);
+    }
+
+    function runAiAssessment() {
+      if (!confirm('Run Gemini 2.5 Flash evidence pass?')) return;
+      google.script.run.withSuccessHandler(function(r) { alert(r.message); loadBootstrapData(state.currentSubId); }).apiRunInitialAiAssessment(state.currentSubId);
+    }
+
+    function generateFeedback() {
+      google.script.run.withSuccessHandler(function(r) {
+        if (r.success) {
+          document.getElementById('fbWhatWentWell').value = r.feedback.whatWentWell || '';
+          document.getElementById('fbImprovement').value = r.feedback.areasForImprovement || '';
+          document.getElementById('fbGoals').value = r.feedback.goalsForNextAssessment || '';
+        } else alert(r.message);
+      }).apiGenerateFeedback(state.submissionDetail.assessmentId, state.currentSubId);
+    }
+  </script>
+</body>
+</html>
