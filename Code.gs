@@ -121,19 +121,6 @@ var GradeScaleService = (function() {
 
   /* Round-half-up letter selection: picks the nearest weight; an exact
      midpoint tie rounds UP to the higher letter. */
-  function nearestGradeLetter(score, weights) {
-    var letters = ['A', 'B', 'C', 'D', 'E'];
-    var sorted = letters.filter(function(l) { return weights[l] !== undefined; })
-      .sort(function(a, b) { return weights[b] - weights[a]; });
-    if (!sorted.length) return 'E';
-    for (var i = 0; i < sorted.length - 1; i++) {
-      var upper = sorted[i], lower = sorted[i + 1];
-      var midpoint = (weights[upper] + weights[lower]) / 2;
-      if (score >= midpoint - 1e-9) return upper;
-    }
-    return sorted[sorted.length - 1];
-  }
-
   function getOverallGradeLetter(totalPercent, bands) {
     bands = bands || getOverallGradeBands();
     for (var i = 0; i < bands.length; i++) {

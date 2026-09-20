@@ -8,13 +8,6 @@ var state = {
   fileIdx: 0,
   slideNum: 1
 };
-var GRADE_WEIGHTS = {
-  A: 1.0,
-  B: 0.875,
-  C: 0.70,
-  D: 0.575,
-  E: 0.25
-};
 window.onload = function() {
   window.addEventListener("message", function(event) {
     if (event.data && event.data.type === "VOICE_TRANSCRIPT") {
@@ -292,7 +285,7 @@ function recalculateOverallScore() {
     pB = 0;
   state.criteria.forEach(function(c) {
     var cd = state.detail.criteriaMap[c.criterionId];
-    var score = (cd && cd.derivedScore !== undefined) ? cd.derivedScore : W.E;
+    var score = (cd && cd.derivedScore !== undefined) ? cd.derivedScore : 0;
     var marks = c.maxMarks * score;
     if (c.part === "Part A") pA += marks;
     else pB += marks;
