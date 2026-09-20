@@ -1571,9 +1571,12 @@ var GeminiService = (function() {
  * SECTION 8: EMBEDDED HTML TEMPLATES
  * REBUILT FROM SCRATCH — paste this entire block into Code.gs between the
  * end of Section 7 (GeminiService) and the start of Section 9 (onOpen).
- * This replaces the missing "var HtmlTemplates = (function() {
+ * This replaces the missing "var HtmlTemplates = (function() {...})();"
+ * and resolves "ReferenceError: HtmlTemplates is not defined".
+ * ============================================================================ */
+var HtmlTemplates = (function() {
 
-function getAssessmentPdfReportHtml(detail) {
+  function getAssessmentPdfReportHtml(detail) {
     var sub = detail.submission;
     var cMap = detail.criteriaMap;
     var fb = detail.feedback || {};

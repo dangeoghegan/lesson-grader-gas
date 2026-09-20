@@ -261,6 +261,7 @@ function onCritCheckToggled(el, cid, checkId) {
   if (!crit) return;
   var calc = deriveGradeLocal(crit, cd.checkboxes);
   cd.derivedGrade = calc.grade;
+  cd.derivedScore = calc.score;
   cd.explanation = calc.explanation;
   var badge = document.getElementById("badge-" + cid);
   if (badge) {
