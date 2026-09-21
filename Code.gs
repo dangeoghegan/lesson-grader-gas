@@ -1231,17 +1231,12 @@ var ClassroomService = (function() {
         var userHistory = subMap[uid] || [];
         userHistory.sort(function(a, b) { return (parseInt(b.SubmissionVersion, 10) || 1) - (parseInt(a.SubmissionVersion, 10) || 1); });
         var latest = userHistory.length > 0 ? userHistory[0] : null;
-        var currentSubmissionRecordId = latest ? latest.SubmissionRecordID : Utils.generateUuid();
 
-        if (!identity.matched && !exceptionUids[uid]) {
-          exceptionRowsToAppend.push([
-            currentSubmissionRecordId, uid, sEmail, identity.officialName, now, false
-          ]);
-          exceptionUids[uid] = true;
-        }
+        var finalRecordId;
 
         if (!latest) {
-          var newId = currentSubmissionRecordId;
+          var newId = Utils.generateUuid();
+          finalRecordId = newId;
           sSheet.appendRow([
             newId, cfg.CourseID, cfg.CourseWorkID, cSub.id, uid, sName, sEmail, cfg.CourseName || '9DAT1', cfg.AssignmentTitle || 'Task 2: Jewellery Design',
             1, 'Draft', cSub.state || 'NEW', cSub.creationTime || now, cSub.updateTime || now, cSub.late || false,
@@ -1251,12 +1246,14 @@ var ClassroomService = (function() {
           insertFiles(fSheet, newId, attachments);
           stats.newCount++;
         } else {
+          finalRecordId = latest.SubmissionRecordID;
           var prevIds = Utils.safeJsonParse(latest.AttachmentFileIDsJSON, []);
           var changed = (JSON.stringify(prevIds.sort()) !== JSON.stringify(fileIds.sort())) || (cSub.updateTime && cSub.updateTime !== latest.UpdateTime);
           if (changed) {
             if (latest.Status === Config.STATUS.LOCKED || latest.Status === Config.STATUS.APPROVED) {
               var nVer = (parseInt(latest.SubmissionVersion, 10) || 1) + 1;
               var vId = Utils.generateUuid();
+              finalRecordId = vId;
               sSheet.appendRow([
                 vId, cfg.CourseID, cfg.CourseWorkID, cSub.id, uid, sName, sEmail, cfg.CourseName || '9DAT1', cfg.AssignmentTitle || 'Task 2: Jewellery Design',
                 nVer, 'Reassessment', cSub.state || 'UPDATED', cSub.creationTime || now, cSub.updateTime || now, cSub.late || false,
@@ -1272,6 +1269,13 @@ var ClassroomService = (function() {
           } else {
             stats.skipped++;
           }
+        }
+
+        if (!identity.matched && !exceptionUids[uid]) {
+          exceptionRowsToAppend.push([
+            finalRecordId, uid, sEmail, identity.officialName, now, false
+          ]);
+          exceptionUids[uid] = true;
         }
       }
 
