@@ -431,6 +431,7 @@ var Sheets = (function() {
     }
 
     var schemas = [
+      { name: 'RosterExceptions', headers: ['SubmissionRecordID', 'ClassroomUserID', 'ClassroomEmail', 'ClassroomName', 'DetectedAt', 'Resolved'] },
       { name: 'RubricProfiles', headers: ['ProfileID', 'ProfileName', 'JSONDefinition', 'CreatedAt'] },
       { name: 'ClassLists', headers: ['ClassID', 'OfficialName', 'PreferredName', 'SchoolEmail', 'Active'] },
       { name: Config.SHEET_CLASSROOM_CONFIG, headers: ['ConfigID', 'CourseID', 'CourseName', 'CourseSection', 'CourseWorkID', 'AssignmentTitle', 'MaxPoints', 'SavedAt', 'SavedBy', 'Active'] },
@@ -608,6 +609,56 @@ var Sheets = (function() {
 /* ============================================================================
  * SECTION 4: ASSESSMENT ENGINE & DETERMINISTIC INDEPENDENT GRADES
  * ============================================================================ */
+/* ----------------------------------------------------------------------------
+ * RosterService
+ * ---------------------------------------------------------------------------- */
+var RosterService = (function() {
+  function getClassRosterMap(targetClassId) {
+    var map = {};
+    var classLists = Sheets.getSheetDataAsObjects("ClassLists");
+    for (var i = 0; i < classLists.length; i++) {
+      var row = classLists[i];
+      if (row.Active !== true && row.Active !== "TRUE" && row.Active !== "true") continue;
+      if (targetClassId && String(row.ClassID).toLowerCase().trim() !== String(targetClassId).toLowerCase().trim()) continue;
+      if (!row.SchoolEmail) continue;
+      var email = String(row.SchoolEmail).toLowerCase().trim();
+      map[email] = {
+        officialName: row.OfficialName || "",
+        preferredName: row.PreferredName || "",
+        classId: row.ClassID || ""
+      };
+    }
+    return map;
+  }
+
+  function resolveStudentIdentity(email, officialNameFromClassroom, rosterMap) {
+    if (!email) email = "";
+    var normEmail = String(email).toLowerCase().trim();
+    if (rosterMap && rosterMap[normEmail]) {
+      var entry = rosterMap[normEmail];
+      var disp = entry.preferredName || entry.officialName || officialNameFromClassroom;
+      return {
+        displayName: disp,
+        officialName: entry.officialName,
+        preferredName: entry.preferredName,
+        matched: true
+      };
+    } else {
+      return {
+        displayName: officialNameFromClassroom,
+        officialName: officialNameFromClassroom,
+        preferredName: (officialNameFromClassroom || "").split(" ")[0],
+        matched: false
+      };
+    }
+  }
+
+  return {
+    getClassRosterMap: getClassRosterMap,
+    resolveStudentIdentity: resolveStudentIdentity
+  };
+})();
+
 var AssessmentService = (function() {
 
   function deriveGradeFromChecks(criterionId, checksMap) {
@@ -1111,11 +1162,23 @@ var ClassroomService = (function() {
   function importOrRefreshClassroomSubmissions() {
     var cfg = getActiveClassroomConfig();
     if (!cfg) return { success: false, message: 'No active Classroom assignment configured. Please select one via Classroom menu.' };
+
+    var rosterMap = RosterService.getClassRosterMap(cfg.CourseName);
+    var existingExceptions = Sheets.getSheetDataAsObjects('RosterExceptions');
+    var exceptionUids = {};
+    for (var i = 0; i < existingExceptions.length; i++) {
+      if (existingExceptions[i].ClassroomUserID) {
+        exceptionUids[existingExceptions[i].ClassroomUserID] = true;
+      }
+    }
+    var exceptionRowsToAppend = [];
+
     try {
       var submissions = listAllStudentSubmissions(cfg.CourseID, cfg.CourseWorkID);
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var sSheet = ss.getSheetByName(Config.SHEET_SUBMISSIONS);
       var fSheet = ss.getSheetByName(Config.SHEET_SUBMISSION_FILES);
+      var exSheet = ss.getSheetByName('RosterExceptions');
 
       if (!sSheet || !fSheet) {
         Sheets.setupOrMigrateAssessmentSystem();
@@ -1150,6 +1213,9 @@ var ClassroomService = (function() {
           sName = 'Student ' + (i + 1);
         }
 
+        var identity = RosterService.resolveStudentIdentity(sEmail, sName, rosterMap);
+        sName = identity.displayName;
+
         var attachments = [], fileIds = [];
         if (cSub.assignmentSubmission && cSub.assignmentSubmission.attachments) {
           var rawAtts = cSub.assignmentSubmission.attachments;
@@ -1165,9 +1231,17 @@ var ClassroomService = (function() {
         var userHistory = subMap[uid] || [];
         userHistory.sort(function(a, b) { return (parseInt(b.SubmissionVersion, 10) || 1) - (parseInt(a.SubmissionVersion, 10) || 1); });
         var latest = userHistory.length > 0 ? userHistory[0] : null;
+        var currentSubmissionRecordId = latest ? latest.SubmissionRecordID : Utils.generateUuid();
+
+        if (!identity.matched && !exceptionUids[uid]) {
+          exceptionRowsToAppend.push([
+            currentSubmissionRecordId, uid, sEmail, identity.officialName, now, false
+          ]);
+          exceptionUids[uid] = true;
+        }
 
         if (!latest) {
-          var newId = Utils.generateUuid();
+          var newId = currentSubmissionRecordId;
           sSheet.appendRow([
             newId, cfg.CourseID, cfg.CourseWorkID, cSub.id, uid, sName, sEmail, cfg.CourseName || '9DAT1', cfg.AssignmentTitle || 'Task 2: Jewellery Design',
             1, 'Draft', cSub.state || 'NEW', cSub.creationTime || now, cSub.updateTime || now, cSub.late || false,
@@ -1200,6 +1274,12 @@ var ClassroomService = (function() {
           }
         }
       }
+
+      if (exceptionRowsToAppend.length > 0 && exSheet) {
+        var startRow = exSheet.getLastRow() + 1;
+        exSheet.getRange(startRow, 1, exceptionRowsToAppend.length, exceptionRowsToAppend[0].length).setValues(exceptionRowsToAppend);
+      }
+
       return {
         success: true,
         message: 'Classroom sync completed: ' + stats.newCount + ' new, ' + stats.updated + ' updated, ' + stats.newVersion + ' new versions, ' + stats.skipped + ' unchanged.',
@@ -1268,6 +1348,7 @@ var ClassroomService = (function() {
           break;
         }
       }
+
       return { success: true, message: 'Synced grade ' + assignedGrade + ' / ' + maxPoints + ' to Classroom for ' + sub.StudentName + '.' };
     } catch (err) {
       Logging.logError('syncAssessmentToClassroom', err);
@@ -1812,6 +1893,16 @@ function apiListTeacherCourses() { return ClassroomService.listTeacherCourses();
 function apiListCourseWork(cid) { return ClassroomService.listCourseWork(cid); }
 function apiSaveClassroomSelection(cid, cwid) { return ClassroomService.saveClassroomSelection(cid, cwid); }
 function apiImportClassroomSubmissions() { return ClassroomService.importOrRefreshClassroomSubmissions(); }
+function apiGetRosterExceptions() {
+  var exceptions = Sheets.getSheetDataAsObjects('RosterExceptions');
+  var unresolved = [];
+  for (var i = 0; i < exceptions.length; i++) {
+    if (exceptions[i].Resolved !== true && exceptions[i].Resolved !== 'TRUE' && exceptions[i].Resolved !== 'true') {
+      unresolved.push(exceptions[i]);
+    }
+  }
+  return unresolved;
+}
 
 function apiPrepareSingleFileForAi(submissionRecordId, driveFileId) {
   var allFiles = Sheets.getSheetDataAsObjects(Config.SHEET_SUBMISSION_FILES);
