@@ -431,7 +431,6 @@ var Sheets = (function() {
     }
 
     var schemas = [
-      { name: 'RosterExceptions', headers: ['SubmissionRecordID', 'ClassroomUserID', 'ClassroomEmail', 'ClassroomName', 'DetectedAt', 'Resolved'] },
       { name: 'RubricProfiles', headers: ['ProfileID', 'ProfileName', 'JSONDefinition', 'CreatedAt'] },
       { name: 'ClassLists', headers: ['ClassID', 'OfficialName', 'PreferredName', 'SchoolEmail', 'Active'] },
       { name: Config.SHEET_CLASSROOM_CONFIG, headers: ['ConfigID', 'CourseID', 'CourseName', 'CourseSection', 'CourseWorkID', 'AssignmentTitle', 'MaxPoints', 'SavedAt', 'SavedBy', 'Active'] },
@@ -1164,21 +1163,12 @@ var ClassroomService = (function() {
     if (!cfg) return { success: false, message: 'No active Classroom assignment configured. Please select one via Classroom menu.' };
 
     var rosterMap = RosterService.getClassRosterMap(cfg.CourseName);
-    var existingExceptions = Sheets.getSheetDataAsObjects('RosterExceptions');
-    var exceptionUids = {};
-    for (var i = 0; i < existingExceptions.length; i++) {
-      if (existingExceptions[i].ClassroomUserID) {
-        exceptionUids[existingExceptions[i].ClassroomUserID] = true;
-      }
-    }
-    var exceptionRowsToAppend = [];
 
     try {
       var submissions = listAllStudentSubmissions(cfg.CourseID, cfg.CourseWorkID);
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var sSheet = ss.getSheetByName(Config.SHEET_SUBMISSIONS);
       var fSheet = ss.getSheetByName(Config.SHEET_SUBMISSION_FILES);
-      var exSheet = ss.getSheetByName('RosterExceptions');
 
       if (!sSheet || !fSheet) {
         Sheets.setupOrMigrateAssessmentSystem();
@@ -1270,18 +1260,6 @@ var ClassroomService = (function() {
             stats.skipped++;
           }
         }
-
-        if (!identity.matched && !exceptionUids[uid]) {
-          exceptionRowsToAppend.push([
-            finalRecordId, uid, sEmail, identity.officialName, now, false
-          ]);
-          exceptionUids[uid] = true;
-        }
-      }
-
-      if (exceptionRowsToAppend.length > 0 && exSheet) {
-        var startRow = exSheet.getLastRow() + 1;
-        exSheet.getRange(startRow, 1, exceptionRowsToAppend.length, exceptionRowsToAppend[0].length).setValues(exceptionRowsToAppend);
       }
 
       return {
@@ -1323,6 +1301,86 @@ var ClassroomService = (function() {
     }
   }
 
+  function syncClassListFromClassroom(courseId) {
+    try {
+      var course = Classroom.Courses.get(courseId);
+      var courseName = course.name || courseId;
+
+      var students = [];
+      var pageToken = null;
+      do {
+        var params = { pageSize: 100 };
+        if (pageToken) params.pageToken = pageToken;
+        var response = Classroom.Courses.Students.list(String(courseId), params);
+        if (response && response.students) students = students.concat(response.students);
+        pageToken = (response && response.nextPageToken) ? response.nextPageToken : null;
+      } while (pageToken);
+
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName("ClassLists");
+      if (!sheet) {
+        return { success: false, message: "ClassLists sheet not found." };
+      }
+
+      var existingData = sheet.getDataRange().getValues();
+      var emailToRowIndex = {};
+      for (var r = 1; r < existingData.length; r++) {
+        var em = String(existingData[r][3] || "").toLowerCase().trim();
+        // Only consider students in the current course we are syncing
+        if (em && String(existingData[r][0] || "").toLowerCase().trim() === String(courseName).toLowerCase().trim()) {
+          emailToRowIndex[em] = r + 1;
+        }
+      }
+
+      var classroomEmails = {};
+      var newRows = [];
+      var updatedCount = 0;
+      var newCount = 0;
+
+      for (var i = 0; i < students.length; i++) {
+        var s = students[i];
+        if (!s.profile || !s.profile.emailAddress) continue;
+
+        var email = s.profile.emailAddress.toLowerCase().trim();
+        var officialName = s.profile.name ? s.profile.name.fullName : "Unknown";
+        classroomEmails[email] = true;
+
+        if (emailToRowIndex[email]) {
+          var rowIdx = emailToRowIndex[email];
+          var currentActive = existingData[rowIdx - 1][4];
+          if (currentActive !== true && currentActive !== "TRUE" && currentActive !== "true") {
+             sheet.getRange(rowIdx, 5).setValue(true);
+             updatedCount++;
+          }
+        } else {
+          newRows.push([courseName, officialName, "", email, true]);
+          newCount++;
+        }
+      }
+
+      // Update dropped students (in sheet for this course but NOT in Classroom)
+      for (var sheetEmail in emailToRowIndex) {
+        if (!classroomEmails[sheetEmail]) {
+          var dropIdx = emailToRowIndex[sheetEmail];
+          var dropActive = existingData[dropIdx - 1][4];
+          if (dropActive === true || dropActive === "TRUE" || dropActive === "true") {
+            sheet.getRange(dropIdx, 5).setValue(false);
+            updatedCount++;
+          }
+        }
+      }
+
+      if (newRows.length > 0) {
+        sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, newRows[0].length).setValues(newRows);
+      }
+
+      return { success: true, message: "Class list synced. Added " + newCount + ", updated active status for " + updatedCount + " students." };
+    } catch (err) {
+      Logging.logError('syncClassListFromClassroom', err);
+      return { success: false, message: "Sync failed: " + Utils.sanitizeError(err) };
+    }
+  }
+
   function syncAssessmentToClassroom(assessmentId, submissionRecordId) {
     var detail = AssessmentService.getSubmissionForMarking(submissionRecordId);
     var sub = detail.submission;
@@ -1360,7 +1418,7 @@ var ClassroomService = (function() {
     }
   }
 
-  return { listTeacherCourses: listTeacherCourses, listCourseWork: listCourseWork, saveClassroomSelection: saveClassroomSelection, getActiveClassroomConfig: getActiveClassroomConfig, importOrRefreshClassroomSubmissions: importOrRefreshClassroomSubmissions, syncAssessmentToClassroom: syncAssessmentToClassroom };
+  return { listTeacherCourses: listTeacherCourses, listCourseWork: listCourseWork, saveClassroomSelection: saveClassroomSelection, getActiveClassroomConfig: getActiveClassroomConfig, importOrRefreshClassroomSubmissions: importOrRefreshClassroomSubmissions, syncClassListFromClassroom: syncClassListFromClassroom, syncAssessmentToClassroom: syncAssessmentToClassroom };
 })();
 
 /* ============================================================================
@@ -1749,6 +1807,7 @@ function onOpen() {
     .addSubMenu(ui.createMenu('Classroom')
       .addItem('Select Course and Assignment', 'openClassroomPicker')
       .addItem('Import / Refresh Submissions', 'importOrRefreshClassroomSubmissionsUi')
+      .addItem('Sync Class List', 'syncClassListFromClassroomUi')
       .addItem('Sync Approved Assessment to Classroom', 'syncApprovedAssessmentToClassroomUi'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Gemini')
@@ -1834,6 +1893,20 @@ function importOrRefreshClassroomSubmissionsUi() {
   );
 }
 
+function syncClassListFromClassroomUi() {
+  var cfg = ClassroomService.getActiveClassroomConfig();
+  if (!cfg) {
+    SpreadsheetApp.getUi().alert('Error', 'No active Classroom assignment configured. Please select one via Classroom menu.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  var res = ClassroomService.syncClassListFromClassroom(cfg.CourseID);
+  SpreadsheetApp.getUi().alert(
+    res.success ? 'Class List Sync Complete' : 'Class List Sync Failed',
+    res.message,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
 function syncApprovedAssessmentToClassroomUi() {
   SpreadsheetApp.getUi().alert('Classroom Sync', 'Please open Assessment Studio and click "Sync" for the desired student.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
@@ -1897,16 +1970,6 @@ function apiListTeacherCourses() { return ClassroomService.listTeacherCourses();
 function apiListCourseWork(cid) { return ClassroomService.listCourseWork(cid); }
 function apiSaveClassroomSelection(cid, cwid) { return ClassroomService.saveClassroomSelection(cid, cwid); }
 function apiImportClassroomSubmissions() { return ClassroomService.importOrRefreshClassroomSubmissions(); }
-function apiGetRosterExceptions() {
-  var exceptions = Sheets.getSheetDataAsObjects('RosterExceptions');
-  var unresolved = [];
-  for (var i = 0; i < exceptions.length; i++) {
-    if (exceptions[i].Resolved !== true && exceptions[i].Resolved !== 'TRUE' && exceptions[i].Resolved !== 'true') {
-      unresolved.push(exceptions[i]);
-    }
-  }
-  return unresolved;
-}
 
 function apiPrepareSingleFileForAi(submissionRecordId, driveFileId) {
   var allFiles = Sheets.getSheetDataAsObjects(Config.SHEET_SUBMISSION_FILES);
