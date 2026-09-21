@@ -433,6 +433,7 @@ var Sheets = (function() {
     var schemas = [
       { name: 'RubricProfiles', headers: ['ProfileID', 'ProfileName', 'JSONDefinition', 'CreatedAt'] },
       { name: 'ClassLists', headers: ['ClassID', 'OfficialName', 'PreferredName', 'SchoolEmail', 'Active'] },
+      { name: 'RosterExceptions', headers: ['SubmissionRecordID', 'ClassroomUserID', 'ClassroomEmail', 'ClassroomName', 'DetectedAt', 'Resolved'] },
       { name: Config.SHEET_CLASSROOM_CONFIG, headers: ['ConfigID', 'CourseID', 'CourseName', 'CourseSection', 'CourseWorkID', 'AssignmentTitle', 'MaxPoints', 'SavedAt', 'SavedBy', 'Active'] },
       { name: Config.SHEET_SUBMISSIONS, headers: ['SubmissionRecordID', 'ClassroomCourseID', 'ClassroomCourseWorkID', 'ClassroomSubmissionID', 'StudentUserID', 'StudentName', 'StudentEmail', 'Class', 'Task', 'SubmissionVersion', 'SourceType', 'ClassroomState', 'TurnedInTime', 'UpdateTime', 'Late', 'AttachmentSummary', 'AttachmentFileIDsJSON', 'AttachmentMetadataJSON', 'DriveFolderID', 'Status', 'ParentSubmissionRecordID', 'CurrentOfficial', 'LockedAt', 'LockedBy', 'ApprovedAt', 'ApprovedBy', 'ClassroomAssignedGrade', 'LastClassroomSyncAt', 'LastSyncResult', 'Notes'] },
       { name: Config.SHEET_SUBMISSION_FILES, headers: ['SubmissionRecordID', 'FileRecordID', 'SourceType', 'DriveFileID', 'FileName', 'MimeType', 'AlternateLink', 'ThumbnailUrl', 'FileSize', 'EligibleForAI', 'AIReviewStatus', 'AIExtractedText', 'Limitations', 'CreatedAt'] },
@@ -608,6 +609,73 @@ var Sheets = (function() {
 /* ============================================================================
  * SECTION 4: ASSESSMENT ENGINE & DETERMINISTIC INDEPENDENT GRADES
  * ============================================================================ */
+var RosterService = (function() {
+  function getClassRosterMap(targetClassId) {
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName('ClassLists');
+      if (!sheet) return {};
+      var data = sheet.getDataRange().getValues();
+      var map = {};
+
+      // Assume row 1 is header
+      for (var r = 1; r < data.length; r++) {
+        var row = data[r];
+        if (row.length < 5) continue;
+
+        var classId = String(row[0] || '').trim();
+        var officialName = String(row[1] || '').trim();
+        var preferredName = String(row[2] || '').trim();
+        var email = String(row[3] || '').trim().toLowerCase();
+        var active = String(row[4] || '').trim().toUpperCase();
+
+        if (active === 'FALSE') continue;
+        if (targetClassId && classId.toLowerCase() !== String(targetClassId).trim().toLowerCase()) continue;
+        if (!email) continue;
+
+        map[email] = {
+          officialName: officialName,
+          preferredName: preferredName,
+          classId: classId
+        };
+      }
+      return map;
+    } catch (err) {
+      Logging.logError('RosterService.getClassRosterMap', err);
+      return {};
+    }
+  }
+
+  function resolveStudentIdentity(email, officialNameFromClassroom, rosterMap) {
+    var normEmail = String(email || '').trim().toLowerCase();
+
+    if (normEmail && rosterMap[normEmail]) {
+      var record = rosterMap[normEmail];
+      return {
+        displayName: record.preferredName || record.officialName,
+        officialName: record.officialName,
+        preferredName: record.preferredName,
+        matched: true
+      };
+    }
+
+    var fallbackName = String(officialNameFromClassroom || '').trim();
+    var fallbackPref = fallbackName.split(' ')[0] || '';
+
+    return {
+      displayName: fallbackName,
+      officialName: fallbackName,
+      preferredName: fallbackPref,
+      matched: false
+    };
+  }
+
+  return {
+    getClassRosterMap: getClassRosterMap,
+    resolveStudentIdentity: resolveStudentIdentity
+  };
+})();
+
 var AssessmentService = (function() {
 
   function deriveGradeFromChecks(criterionId, checksMap) {
@@ -1136,19 +1204,37 @@ var ClassroomService = (function() {
       var stats = { total: submissions.length, newCount: 0, updated: 0, newVersion: 0, skipped: 0 };
       var now = Utils.formatDate(new Date());
 
+            var rosterMap = RosterService.getClassRosterMap(cfg.CourseName);
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var excSheet = ss.getSheetByName('RosterExceptions');
+      if (!excSheet) {
+        Sheets.setupOrMigrateAssessmentSystem();
+        excSheet = ss.getSheetByName('RosterExceptions');
+      }
+      var existingExceptions = [];
+      if (excSheet) {
+        var excData = excSheet.getDataRange().getValues();
+        for (var r = 1; r < excData.length; r++) {
+          existingExceptions.push(excData[r][1]); // ClassroomUserID is at index 1
+        }
+      }
       for (var i = 0; i < submissions.length; i++) {
         var cSub = submissions[i];
         var uid = cSub.userId;
-        var sName = 'Student ' + (i + 1);
-        var sEmail = '';
+        var classroomName = 'Student ' + (i + 1);
+        var classroomEmail = '';
 
         try {
           var p = Classroom.UserProfiles.get(uid);
-          if (p && p.name && p.name.fullName) sName = p.name.fullName;
-          if (p && p.emailAddress) sEmail = p.emailAddress;
+          if (p && p.name && p.name.fullName) classroomName = p.name.fullName;
+          if (p && p.emailAddress) classroomEmail = p.emailAddress;
         } catch (pe) {
-          sName = 'Student ' + (i + 1);
+          classroomName = 'Student ' + (i + 1);
         }
+
+        var identity = RosterService.resolveStudentIdentity(classroomEmail, classroomName, rosterMap);
+        var sName = identity.displayName;
+        var sEmail = classroomEmail;
 
         var attachments = [], fileIds = [];
         if (cSub.assignmentSubmission && cSub.assignmentSubmission.attachments) {
@@ -1199,6 +1285,18 @@ var ClassroomService = (function() {
             stats.skipped++;
           }
         }
+        if (!identity.matched && sEmail && excSheet) {
+            if (existingExceptions.indexOf(uid) === -1) {
+                var finalId = '';
+                if (typeof newId !== 'undefined') finalId = newId;
+                else if (typeof vId !== 'undefined') finalId = vId;
+                else if (latest && latest.SubmissionRecordID) finalId = latest.SubmissionRecordID;
+
+                excSheet.appendRow([finalId, uid, sEmail, classroomName, Utils.formatDate(new Date()), false]);
+                existingExceptions.push(uid);
+            }
+        }
+
       }
       return {
         success: true,
@@ -1825,6 +1923,17 @@ function apiPrepareSingleFileForAi(submissionRecordId, driveFileId) {
 
 function apiRunAiAssessmentWithFiles(submissionRecordId, preparedFiles) {
   return GeminiService.runAiAssessmentWithPreparedFiles(submissionRecordId, preparedFiles);
+}
+
+function apiGetRosterExceptions() {
+  var rows = Sheets.getSheetDataAsObjects('RosterExceptions');
+  var unhandled = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].Resolved !== true && rows[i].Resolved !== 'TRUE' && rows[i].Resolved !== 'true') {
+      unhandled.push(rows[i]);
+    }
+  }
+  return unhandled;
 }
 
 /* --- Batch Class AI Endpoints --- */

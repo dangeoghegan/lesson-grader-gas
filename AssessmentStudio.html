@@ -285,7 +285,7 @@ function recalculateOverallScore() {
     pB = 0;
   state.criteria.forEach(function(c) {
     var cd = state.detail.criteriaMap[c.criterionId];
-    var score = (cd && cd.derivedScore !== undefined) ? cd.derivedScore : W.E;
+    var score = (cd && cd.derivedScore !== undefined) ? cd.derivedScore : 0;
     var marks = c.maxMarks * score;
     if (c.part === "Part A") pA += marks;
     else pB += marks;
