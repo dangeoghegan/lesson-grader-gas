@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>Class AI Grading Runner</title>
+<style>
+body {
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  margin:0;
+  padding:24px;
+  background:#f8fafc;
+  color:#0f172a;
+  }
+.bar-wrap {
+  background:#e2e8f0;
+  border-radius:8px;
+  height:24px;
+  width:100%;
+  overflow:hidden;
+  margin:16px 0;
+  position:relative;
+  }
+.bar-fill {
+  background:linear-gradient(90deg,#7c3aed,#2563eb);
+  height:100%;
+  width:0%;
+  transition:width 0.4s ease;
+  }
+.bar-text {
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  bottom:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:12px;
+  font-weight:700;
+  color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,0.5);
+  }
+.status-box {
+  background:#fff;
+  border:1px solid #cbd5e1;
+  border-radius:6px;
+  padding:14px;
+  font-size:13px;
+  min-height:90px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  }
+.log-box {
+  margin-top:14px;
+  height:120px;
+  overflow-y:auto;
+  background:#0f172a;
+  color:#38bdf8;
+  padding:10px;
+  border-radius:6px;
+  font-family:monospace;
+  font-size:11px;
+  }
+button {
+  padding:8px 18px;
+  border-radius:6px;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+  border:none;
+  }
+.btn-start {
+  background:#7c3aed;
+  color:#fff;
+  }
+.btn-cancel {
+  background:#e2e8f0;
+  color:#334155;
+  }
+
+</style>
+</head>
+<body>
+<h2 style="margin-top:0;">Class-Wide AI Assessment Runner</h2>
+<p style="font-size:13px;color:#475569;">Sequentially grades student submissions with high-accuracy vision checks, derives grades, and generates feedback drafts with 2.5s pacing intervals.</p>
+<div class="bar-wrap">
+<div id="bar" class="bar-fill">
+</div>
+<div id="barTxt" class="bar-text">0%</div>
+</div>
+<div class="status-box">
+<div id="curStudent" style="font-weight:700;">Ready to start</div>
+<div id="subDetail" style="font-size:12px;color:#64748b;margin-top:4px;">Click Start to begin grading all students.</div>
+</div>
+<div id="log" class="log-box">&gt; System ready.</div>
+<div style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px;">
+<button class="btn-cancel" onclick="stopOrClose()">Close</button>
+<button id="btnStart" class="btn-start" onclick="startBatch()">Start Class Grading</button>
+</div><script>var list = [], currentIdx = 0, isRunning = false;window.onload = function(){ google.script.run.withSuccessHandler(function(subs){ list = subs || []; document.getElementById("subDetail").textContent = list.length + " submissions available for grading."; }).apiGetClassSubmissions(); };function log(msg){ var el = document.getElementById("log"); el.innerHTML += "<div>&gt; " + msg + "</div>"; el.scrollTop = el.scrollHeight; }function startBatch(){ if(list.length === 0){ alert("No submissions found."); return; } isRunning = true; document.getElementById("btnStart").disabled = true; processNext(); }function processNext(){if(!isRunning || currentIdx >= list.length){ finishBatch(); return; }var s = list[currentIdx];var pct = Math.round(((currentIdx + 1) / list.length) * 100);document.getElementById("bar").style.width = pct + "%";document.getElementById("barTxt").textContent = pct + "% (" + (currentIdx + 1) + "/" + list.length + ")";document.getElementById("curStudent").textContent = "Grading: " + s.StudentName + " (v" + s.SubmissionVersion + ")";document.getElementById("subDetail").textContent = "Auditing Drive files & generating feedback...";log("Assessing " + s.StudentName + "...");google.script.run.withSuccessHandler(function(res){if(res.success){ log("Completed " + s.StudentName + ": " + res.message); }else { log(s.StudentName + " error: " + res.message); }currentIdx++;setTimeout(processNext, 2500);}).withFailureHandler(function(err){log("Script error on " + s.StudentName + ": " + err.message);currentIdx++;setTimeout(processNext, 2500);}).apiGradeSingleStudentBatch(s.SubmissionRecordID);}function finishBatch(){ isRunning = false; document.getElementById("curStudent").textContent = "Class AI Grading Complete!"; document.getElementById("subDetail").textContent = "All " + list.length + " students graded."; log("Batch run complete. Please review marks in Assessment Studio."); document.getElementById("btnStart").style.display = "none"; }function stopOrClose(){ isRunning = false; google.script.host.close(); }
+</script></body></html>
