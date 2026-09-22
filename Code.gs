@@ -662,6 +662,8 @@ var RosterService = (function() {
  * RubricsLibrary (Phase 3 Foundation)
  * ---------------------------------------------------------------------------- */
 var RubricsLibrary = (function() {
+  var ROOT_FOLDER_NAME = 'Graded Assessments';
+
   function getOrCreateFolder(parent, name) {
     var folders = parent.getFoldersByName(name);
     if (folders.hasNext()) return folders.next();
@@ -670,7 +672,7 @@ var RubricsLibrary = (function() {
 
   function ensureRubricsLibraryStructure() {
     var root = DriveApp.getRootFolder();
-    var libraryFolder = getOrCreateFolder(root, "Rubrics Library");
+    var libraryFolder = getOrCreateFolder(root, ROOT_FOLDER_NAME);
     var settingsFolder = getOrCreateFolder(libraryFolder, "Settings");
     getOrCreateFolder(libraryFolder, "Stage 4");
     getOrCreateFolder(libraryFolder, "Stage 5");
@@ -713,7 +715,7 @@ var RubricsLibrary = (function() {
 
   function getIndexSpreadsheet() {
     var root = DriveApp.getRootFolder();
-    var libraryFolder = getOrCreateFolder(root, "Rubrics Library");
+    var libraryFolder = getOrCreateFolder(root, ROOT_FOLDER_NAME);
     var settingsFolder = getOrCreateFolder(libraryFolder, "Settings");
     var files = settingsFolder.getFilesByName("Rubrics Index");
     if (files.hasNext()) {
@@ -808,8 +810,32 @@ var RubricsLibrary = (function() {
     return results;
   }
 
+  function ensureCourseCategoryFolderPath(stage, courseCode, categoryName, year) {
+    if (stage !== 'Stage 4' && stage !== 'Stage 5' && stage !== 'Stage 6') {
+      return { success: false, message: 'Invalid stage.' };
+    }
+
+    ensureRubricsLibraryStructure();
+
+    var root = DriveApp.getRootFolder();
+    var libraryFolder = getOrCreateFolder(root, ROOT_FOLDER_NAME);
+    var stageFolder = getOrCreateFolder(libraryFolder, stage);
+    var courseFolder = getOrCreateFolder(stageFolder, courseCode);
+    var categoryFolder = getOrCreateFolder(courseFolder, categoryName);
+
+    addCourseToIndex(stage, courseCode, year);
+    addCategoryToIndex(courseCode, categoryName);
+
+    return {
+      success: true,
+      categoryFolder: { id: categoryFolder.getId(), name: categoryFolder.getName() },
+      message: 'Folder structure and index updated successfully.'
+    };
+  }
+
   return {
     ensureRubricsLibraryStructure: ensureRubricsLibraryStructure,
+    ensureCourseCategoryFolderPath: ensureCourseCategoryFolderPath,
     addCourseToIndex: addCourseToIndex,
     addCategoryToIndex: addCategoryToIndex,
     addTaskToIndex: addTaskToIndex,
