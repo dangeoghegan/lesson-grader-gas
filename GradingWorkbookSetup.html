@@ -95,19 +95,9 @@
         <select id="courseSelect" onchange="handleCourseSelect()">
           <option value="">-- Select Existing or Type New --</option>
         </select>
-        <input type="text" id="courseInput" placeholder="e.g. 9DAT1" oninput="clearSelect('courseSelect'); updateCategoryDropdown()">
+        <input type="text" id="courseInput" placeholder="e.g. 9DAT1" oninput="clearSelect('courseSelect'); updateTaskDropdown()">
       </div>
       <div class="help-text">Must start with 7/8 for Stage 4, 9/10 for Stage 5, 11/12 for Stage 6.</div>
-    </div>
-
-    <div class="form-group">
-      <label for="category">Category</label>
-      <div class="combo-box">
-        <select id="categorySelect" onchange="handleCategorySelect()">
-          <option value="">-- Select Existing or Type New --</option>
-        </select>
-        <input type="text" id="categoryInput" placeholder="e.g. Semester 1" oninput="clearSelect('categorySelect'); updateTaskDropdown()">
-      </div>
     </div>
 
     <div class="form-group">
@@ -169,7 +159,7 @@
         });
 
         document.getElementById('courseInput').value = '';
-        updateCategoryDropdown();
+        updateTaskDropdown();
       }
 
       function handleCourseSelect() {
@@ -178,46 +168,17 @@
         if (select.value) {
           input.value = select.value;
         }
-        updateCategoryDropdown();
-      }
-
-      function updateCategoryDropdown() {
-        const course = document.getElementById('courseInput').value.trim();
-        const select = document.getElementById('categorySelect');
-
-        select.innerHTML = '<option value="">-- Select Existing or Type New --</option>';
-
-        if (course) {
-          const filteredCategories = backendData.categories.filter(c => c.courseCode === course);
-          filteredCategories.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.categoryName;
-            opt.textContent = c.categoryName;
-            select.appendChild(opt);
-          });
-        }
-
-        document.getElementById('categoryInput').value = '';
-        updateTaskDropdown();
-      }
-
-      function handleCategorySelect() {
-        const select = document.getElementById('categorySelect');
-        const input = document.getElementById('categoryInput');
-        if (select.value) {
-          input.value = select.value;
-        }
         updateTaskDropdown();
       }
 
       function updateTaskDropdown() {
         const course = document.getElementById('courseInput').value.trim();
-        const category = document.getElementById('categoryInput').value.trim();
+        const category = 'General';
         const select = document.getElementById('taskSelect');
 
         select.innerHTML = '<option value="">-- Select Existing or Type New --</option>';
 
-        if (course && category) {
+        if (course) {
           const filteredTasks = backendData.tasks.filter(t => t.courseCode === course && t.categoryName === category);
           filteredTasks.forEach(t => {
             const opt = document.createElement('option');
@@ -257,11 +218,11 @@
       function submitForm() {
         const stage = document.getElementById('stage').value;
         const courseCode = document.getElementById('courseInput').value.trim();
-        const categoryName = document.getElementById('categoryInput').value.trim();
+        const categoryName = 'General';
         const taskName = document.getElementById('taskInput').value.trim();
         const year = document.getElementById('year').value;
 
-        if (!courseCode || !categoryName || !taskName || !year) {
+        if (!courseCode || !taskName || !year) {
           showStatus("Please fill in all fields.", true);
           return;
         }
