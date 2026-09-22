@@ -2215,3 +2215,8 @@ function apiGenerateAssessmentPdf(submissionRecordId) {
   }
 }
 function apiExportSubmittedDriveFile(driveFileId) { return DriveService.exportDriveFileAsPdf(driveFileId); }
+
+function runEnsureRubricsLibraryStructure() {
+  var result = RubricsLibrary.ensureRubricsLibraryStructure();
+  Logger.log(result);
+}
