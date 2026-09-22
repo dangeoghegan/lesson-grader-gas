@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        padding: 20px;
+        color: #333;
+      }
+      h2 {
+        font-size: 18px;
+        margin-top: 0;
+        margin-bottom: 20px;
+        color: #1a73e8;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+      select, input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-sizing: border-box;
+        font-family: inherit;
+        font-size: 14px;
+      }
+      .combo-box {
+        display: flex;
+        gap: 10px;
+      }
+      .combo-box select {
+        flex: 1;
+      }
+      .combo-box input {
+        flex: 1;
+      }
+      button {
+        background-color: #1a73e8;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        width: 100%;
+        margin-top: 10px;
+      }
+      button:hover {
+        background-color: #1557b0;
+      }
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+      #status {
+        margin-top: 15px;
+        padding: 10px;
+        border-radius: 4px;
+        display: none;
+        font-size: 13px;
+      }
+      .success { background-color: #e6f4ea; color: #137333; border: 1px solid #ceead6; }
+      .error { background-color: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }
+      .help-text {
+        font-size: 12px;
+        color: #666;
+        margin-top: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Create / Open Grading Workbook</h2>
+
+    <div class="form-group">
+      <label for="stage">Stage</label>
+      <select id="stage" onchange="updateCourseDropdown()">
+        <option value="Stage 4">Stage 4 (Years 7-8)</option>
+        <option value="Stage 5">Stage 5 (Years 9-10)</option>
+        <option value="Stage 6">Stage 6 (Years 11-12)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="course">Course Code</label>
+      <div class="combo-box">
+        <select id="courseSelect" onchange="handleCourseSelect()">
+          <option value="">-- Select Existing or Type New --</option>
+        </select>
+        <input type="text" id="courseInput" placeholder="e.g. 9DAT1" oninput="clearSelect('courseSelect'); updateCategoryDropdown()">
+      </div>
+      <div class="help-text">Must start with 7/8 for Stage 4, 9/10 for Stage 5, 11/12 for Stage 6.</div>
+    </div>
+
+    <div class="form-group">
+      <label for="category">Category</label>
+      <div class="combo-box">
+        <select id="categorySelect" onchange="handleCategorySelect()">
+          <option value="">-- Select Existing or Type New --</option>
+        </select>
+        <input type="text" id="categoryInput" placeholder="e.g. Semester 1" oninput="clearSelect('categorySelect'); updateTaskDropdown()">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="task">Task Name</label>
+      <div class="combo-box">
+        <select id="taskSelect" onchange="handleTaskSelect()">
+          <option value="">-- Select Existing or Type New --</option>
+        </select>
+        <input type="text" id="taskInput" placeholder="e.g. Jewellery Design" oninput="clearSelect('taskSelect')">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="year">Year</label>
+      <input type="number" id="year" onchange="updateCourseDropdown()" required>
+    </div>
+
+    <button id="submitBtn" onclick="submitForm()">Create / Open Workbook</button>
+
+    <div id="status"></div>
+
+    <script>
+      let backendData = { courses: [], categories: [], tasks: [] };
+
+      window.onload = function() {
+        document.getElementById('year').value = new Date().getFullYear();
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').innerText = 'Loading...';
+
+        google.script.run
+          .withSuccessHandler(function(data) {
+            backendData = data;
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerText = 'Create / Open Workbook';
+            updateCourseDropdown();
+          })
+          .withFailureHandler(showError)
+          .apiGetGradingSetupData();
+      };
+
+      function updateCourseDropdown() {
+        const stage = document.getElementById('stage').value;
+        const year = document.getElementById('year').value;
+        const select = document.getElementById('courseSelect');
+
+        select.innerHTML = '<option value="">-- Select Existing or Type New --</option>';
+
+        const filteredCourses = backendData.courses.filter(c => c.stage === stage && c.year.toString() === year);
+
+        // Use a Set to ensure unique course codes in the dropdown
+        const uniqueCourseCodes = new Set();
+        filteredCourses.forEach(c => uniqueCourseCodes.add(c.courseCode));
+
+        uniqueCourseCodes.forEach(code => {
+          const opt = document.createElement('option');
+          opt.value = code;
+          opt.textContent = code;
+          select.appendChild(opt);
+        });
+
+        document.getElementById('courseInput').value = '';
+        updateCategoryDropdown();
+      }
+
+      function handleCourseSelect() {
+        const select = document.getElementById('courseSelect');
+        const input = document.getElementById('courseInput');
+        if (select.value) {
+          input.value = select.value;
+        }
+        updateCategoryDropdown();
+      }
+
+      function updateCategoryDropdown() {
+        const course = document.getElementById('courseInput').value.trim();
+        const select = document.getElementById('categorySelect');
+
+        select.innerHTML = '<option value="">-- Select Existing or Type New --</option>';
+
+        if (course) {
+          const filteredCategories = backendData.categories.filter(c => c.courseCode === course);
+          filteredCategories.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.categoryName;
+            opt.textContent = c.categoryName;
+            select.appendChild(opt);
+          });
+        }
+
+        document.getElementById('categoryInput').value = '';
+        updateTaskDropdown();
+      }
+
+      function handleCategorySelect() {
+        const select = document.getElementById('categorySelect');
+        const input = document.getElementById('categoryInput');
+        if (select.value) {
+          input.value = select.value;
+        }
+        updateTaskDropdown();
+      }
+
+      function updateTaskDropdown() {
+        const course = document.getElementById('courseInput').value.trim();
+        const category = document.getElementById('categoryInput').value.trim();
+        const select = document.getElementById('taskSelect');
+
+        select.innerHTML = '<option value="">-- Select Existing or Type New --</option>';
+
+        if (course && category) {
+          const filteredTasks = backendData.tasks.filter(t => t.courseCode === course && t.categoryName === category);
+          filteredTasks.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.taskName;
+            opt.textContent = t.taskName;
+            select.appendChild(opt);
+          });
+        }
+        document.getElementById('taskInput').value = '';
+      }
+
+      function handleTaskSelect() {
+        const select = document.getElementById('taskSelect');
+        const input = document.getElementById('taskInput');
+        if (select.value) {
+          input.value = select.value;
+        }
+      }
+
+      function clearSelect(selectId) {
+        document.getElementById(selectId).value = '';
+      }
+
+      function showStatus(msg, isError) {
+        const el = document.getElementById('status');
+        el.style.display = 'block';
+        el.innerText = msg;
+        el.className = isError ? 'error' : 'success';
+      }
+
+      function showError(err) {
+        showStatus(err.message || String(err), true);
+        document.getElementById('submitBtn').disabled = false;
+        document.getElementById('submitBtn').innerText = 'Create / Open Workbook';
+      }
+
+      function submitForm() {
+        const stage = document.getElementById('stage').value;
+        const courseCode = document.getElementById('courseInput').value.trim();
+        const categoryName = document.getElementById('categoryInput').value.trim();
+        const taskName = document.getElementById('taskInput').value.trim();
+        const year = document.getElementById('year').value;
+
+        if (!courseCode || !categoryName || !taskName || !year) {
+          showStatus("Please fill in all fields.", true);
+          return;
+        }
+
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('submitBtn').innerText = 'Processing...';
+        showStatus("Creating/opening workbook...", false);
+
+        google.script.run
+          .withSuccessHandler(function(res) {
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerText = 'Create / Open Workbook';
+            if (res.success) {
+              showStatus("Success! " + res.message, false);
+            } else {
+              showStatus("Error: " + res.message, true);
+            }
+          })
+          .withFailureHandler(showError)
+          .apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year);
+      }
+    </script>
+  </body>
+</html>

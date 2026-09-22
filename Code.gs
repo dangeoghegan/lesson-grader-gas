@@ -2021,6 +2021,7 @@ function onOpen() {
   ui.createMenu('Assessment System')
     .addItem('Open Assessment Studio (Fullscreen)', 'openAssessmentStudio')
     .addItem('Run Class AI Grading (All Students)', 'openClassAiGradingRunner')
+    .addItem('Setup New Grading Workbook', 'openGradingWorkbookSetupUi')
     .addItem('Setup / Migrate Assessment System', 'setupOrMigrateAssessmentSystemUi')
     .addItem('Refresh Marking Sheet', 'refreshMarkingSheetUi')
     .addSeparator()
@@ -2049,6 +2050,15 @@ function openAssessmentStudio() {
     .setHeight(1000)
     .setTitle('AI Assessment Studio — Year 9 Jewellery Design');
   SpreadsheetApp.getUi().showModalDialog(html, 'AI Assessment Studio — Year 9 Jewellery Design');
+}
+
+function openGradingWorkbookSetupUi() {
+  var template = HtmlService.createTemplateFromFile('GradingWorkbookSetup');
+  var html = template.evaluate()
+    .setWidth(450)
+    .setHeight(500)
+    .setTitle('Setup Grading Workbook');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Setup Grading Workbook');
 }
 
 function openClassAiGradingRunner() {
@@ -2176,6 +2186,81 @@ function repairAssessmentSystemAndImport() {
 }
 
 /* --- Client-Callable RPC Endpoints (google.script.run) --- */
+function apiGetGradingSetupData() {
+  var stages = ['Stage 4', 'Stage 5', 'Stage 6'];
+  var courses = [];
+  var categories = [];
+  var tasks = [];
+
+  for (var i = 0; i < stages.length; i++) {
+    var stageCourses = RubricsLibrary.getActiveCourses(stages[i]);
+    courses = courses.concat(stageCourses);
+  }
+
+  // Iterate over all courses to fetch nested data
+  for (var i = 0; i < courses.length; i++) {
+    var c = courses[i];
+    var courseCats = RubricsLibrary.getCategoriesForCourse(c.courseCode);
+    categories = categories.concat(courseCats);
+
+    for (var j = 0; j < courseCats.length; j++) {
+      var cat = courseCats[j];
+      var catTasks = RubricsLibrary.getTasksForCourseCategory(cat.courseCode, cat.categoryName);
+      tasks = tasks.concat(catTasks);
+    }
+  }
+
+  return { courses: courses, categories: categories, tasks: tasks };
+}
+
+function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year) {
+  // 1. Validate courseCode starts with correct prefix for stage
+  var isValidPrefix = false;
+  if (stage === 'Stage 4') {
+    isValidPrefix = courseCode.startsWith('7') || courseCode.startsWith('8');
+  } else if (stage === 'Stage 5') {
+    isValidPrefix = courseCode.startsWith('9') || courseCode.startsWith('10');
+  } else if (stage === 'Stage 6') {
+    isValidPrefix = courseCode.startsWith('11') || courseCode.startsWith('12');
+  }
+
+  if (!isValidPrefix) {
+    return { success: false, message: 'Invalid Course Code. Stage 4 must start with 7/8, Stage 5 with 9/10, Stage 6 with 11/12.' };
+  }
+
+  // 2. Call ensureGradingWorkbook
+  var result = RubricsLibrary.ensureGradingWorkbook(stage, courseCode, categoryName, year);
+  if (!result.success) {
+    return result; // Bubble up error
+  }
+
+  // 3. Open workbook and ensure task sheet exists
+  try {
+    var ss = SpreadsheetApp.openById(result.workbook.id);
+    var sheet = ss.getSheetByName(taskName);
+    if (!sheet) {
+      ss.insertSheet(taskName);
+    }
+
+    // Clean up default "Sheet1" if it exists and we added a new task sheet
+    var sheet1 = ss.getSheetByName("Sheet1");
+    if (sheet1 && ss.getSheets().length > 1) {
+      ss.deleteSheet(sheet1);
+    }
+
+    // 4. Add task to index
+    RubricsLibrary.addTaskToIndex(courseCode, categoryName, taskName);
+
+    return {
+      success: true,
+      message: result.message + ' Task tab "' + taskName + '" is ready.',
+      workbook: result.workbook
+    };
+  } catch (err) {
+    return { success: false, message: 'Failed to setup task tab: ' + err.message };
+  }
+}
+
 function apiGetBootstrapData(id) { return AssessmentService.getAssessmentStudioBootstrapData(id); }
 function apiGetSubmissionDetail(id) { return AssessmentService.getSubmissionForMarking(id); }
 function apiSaveCriterionDraft(aId, sId, cId, st) { return AssessmentService.saveCriterionDraft(aId, sId, cId, st); }
