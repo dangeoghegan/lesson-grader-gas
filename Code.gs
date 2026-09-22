@@ -658,6 +658,167 @@ var RosterService = (function() {
   };
 })();
 
+/* ----------------------------------------------------------------------------
+ * RubricsLibrary (Phase 3 Foundation)
+ * ---------------------------------------------------------------------------- */
+var RubricsLibrary = (function() {
+  function getOrCreateFolder(parent, name) {
+    var folders = parent.getFoldersByName(name);
+    if (folders.hasNext()) return folders.next();
+    return parent.createFolder(name);
+  }
+
+  function ensureRubricsLibraryStructure() {
+    var root = DriveApp.getRootFolder();
+    var libraryFolder = getOrCreateFolder(root, "Rubrics Library");
+    var settingsFolder = getOrCreateFolder(libraryFolder, "Settings");
+    getOrCreateFolder(libraryFolder, "Stage 4");
+    getOrCreateFolder(libraryFolder, "Stage 5");
+    getOrCreateFolder(libraryFolder, "Stage 6");
+
+    var files = settingsFolder.getFilesByName("Rubrics Index");
+    var ss;
+    if (files.hasNext()) {
+      var file = files.next();
+      if (file.getMimeType() === MimeType.GOOGLE_SHEETS) {
+        ss = SpreadsheetApp.openById(file.getId());
+      }
+    }
+    if (!ss) {
+      ss = SpreadsheetApp.create("Rubrics Index");
+      var file = DriveApp.getFileById(ss.getId());
+      file.moveTo(settingsFolder);
+    }
+
+    var schemas = [
+      { name: "Courses", headers: ["Stage", "CourseCode", "Year", "Active"] },
+      { name: "Categories", headers: ["CourseCode", "CategoryName"] },
+      { name: "Tasks", headers: ["CourseCode", "CategoryName", "TaskName"] }
+    ];
+
+    for (var i = 0; i < schemas.length; i++) {
+      var sDef = schemas[i];
+      var sheet = ss.getSheetByName(sDef.name);
+      if (!sheet) {
+        sheet = ss.insertSheet(sDef.name);
+        sheet.appendRow(sDef.headers);
+        sheet.getRange(1, 1, 1, sDef.headers.length).setFontWeight("bold");
+      }
+    }
+    // Clean up default "Sheet1" if it exists and is not needed
+    var sheet1 = ss.getSheetByName("Sheet1");
+    if (sheet1 && ss.getSheets().length > 1) ss.deleteSheet(sheet1);
+    return { success: true, message: "Rubrics Library structure verified." };
+  }
+
+  function getIndexSpreadsheet() {
+    var root = DriveApp.getRootFolder();
+    var libraryFolder = getOrCreateFolder(root, "Rubrics Library");
+    var settingsFolder = getOrCreateFolder(libraryFolder, "Settings");
+    var files = settingsFolder.getFilesByName("Rubrics Index");
+    if (files.hasNext()) {
+      var file = files.next();
+      if (file.getMimeType() === MimeType.GOOGLE_SHEETS) return SpreadsheetApp.openById(file.getId());
+    }
+    return null;
+  }
+
+  function addCourseToIndex(stage, courseCode, year) {
+    var ss = getIndexSpreadsheet();
+    if (!ss) return false;
+    var sheet = ss.getSheetByName("Courses");
+    var data = sheet.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]) === String(stage) && String(data[r][1]) === String(courseCode) && String(data[r][2]) === String(year)) {
+        return false; // Already exists
+      }
+    }
+    sheet.appendRow([stage, courseCode, year, true]);
+    return true;
+  }
+
+  function addCategoryToIndex(courseCode, categoryName) {
+    var ss = getIndexSpreadsheet();
+    if (!ss) return false;
+    var sheet = ss.getSheetByName("Categories");
+    var data = sheet.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]) === String(courseCode) && String(data[r][1]) === String(categoryName)) {
+        return false;
+      }
+    }
+    sheet.appendRow([courseCode, categoryName]);
+    return true;
+  }
+
+  function addTaskToIndex(courseCode, categoryName, taskName) {
+    var ss = getIndexSpreadsheet();
+    if (!ss) return false;
+    var sheet = ss.getSheetByName("Tasks");
+    var data = sheet.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]) === String(courseCode) && String(data[r][1]) === String(categoryName) && String(data[r][2]) === String(taskName)) {
+        return false;
+      }
+    }
+    sheet.appendRow([courseCode, categoryName, taskName]);
+    return true;
+  }
+
+  function getActiveCourses(stage) {
+    var ss = getIndexSpreadsheet();
+    if (!ss) return [];
+    var sheet = ss.getSheetByName("Courses");
+    var data = sheet.getDataRange().getValues();
+    var results = [];
+    for (var r = 1; r < data.length; r++) {
+      var isActive = data[r][3] === true || data[r][3] === "TRUE" || data[r][3] === "true";
+      if (String(data[r][0]) === String(stage) && isActive) {
+        results.push({ stage: data[r][0], courseCode: data[r][1], year: data[r][2], active: data[r][3] });
+      }
+    }
+    return results;
+  }
+
+  function getCategoriesForCourse(courseCode) {
+    var ss = getIndexSpreadsheet();
+    if (!ss) return [];
+    var sheet = ss.getSheetByName("Categories");
+    var data = sheet.getDataRange().getValues();
+    var results = [];
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]) === String(courseCode)) {
+        results.push({ courseCode: data[r][0], categoryName: data[r][1] });
+      }
+    }
+    return results;
+  }
+
+  function getTasksForCourseCategory(courseCode, categoryName) {
+    var ss = getIndexSpreadsheet();
+    if (!ss) return [];
+    var sheet = ss.getSheetByName("Tasks");
+    var data = sheet.getDataRange().getValues();
+    var results = [];
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]) === String(courseCode) && String(data[r][1]) === String(categoryName)) {
+        results.push({ courseCode: data[r][0], categoryName: data[r][1], taskName: data[r][2] });
+      }
+    }
+    return results;
+  }
+
+  return {
+    ensureRubricsLibraryStructure: ensureRubricsLibraryStructure,
+    addCourseToIndex: addCourseToIndex,
+    addCategoryToIndex: addCategoryToIndex,
+    addTaskToIndex: addTaskToIndex,
+    getActiveCourses: getActiveCourses,
+    getCategoriesForCourse: getCategoriesForCourse,
+    getTasksForCourseCategory: getTasksForCourseCategory
+  };
+})();
+
 var AssessmentService = (function() {
 
   function deriveGradeFromChecks(criterionId, checksMap) {
