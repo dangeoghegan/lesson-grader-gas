@@ -1177,6 +1177,7 @@ var ClassroomService = (function() {
       }
       if (!sSheet) return { success: false, message: 'Required sheet "' + Config.SHEET_SUBMISSIONS + '" could not be created or found.' };
 
+      var sData = sSheet.getDataRange().getValues();
       var existing = Sheets.getSheetDataAsObjects(Config.SHEET_SUBMISSIONS);
       var subMap = {};
       for (var e = 0; e < existing.length; e++) {
@@ -1221,6 +1222,16 @@ var ClassroomService = (function() {
         var userHistory = subMap[uid] || [];
         userHistory.sort(function(a, b) { return (parseInt(b.SubmissionVersion, 10) || 1) - (parseInt(a.SubmissionVersion, 10) || 1); });
         var latest = userHistory.length > 0 ? userHistory[0] : null;
+
+        if (latest && latest.StudentName !== sName) {
+          for (var r = 1; r < sData.length; r++) {
+            if (sData[r][0] === latest.SubmissionRecordID) {
+              sSheet.getRange(r + 1, 6).setValue(sName);
+              sData[r][5] = sName; // Update local cache to prevent re-writing
+              break;
+            }
+          }
+        }
 
         var finalRecordId;
 
