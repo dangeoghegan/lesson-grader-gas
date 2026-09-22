@@ -833,9 +833,31 @@ var RubricsLibrary = (function() {
     };
   }
 
+  function ensureGradingWorkbook(stage, courseCode, categoryName, year) {
+    var folderResult = ensureCourseCategoryFolderPath(stage, courseCode, categoryName, year);
+    if (!folderResult.success) {
+      return folderResult;
+    }
+
+    var categoryFolder = DriveApp.getFolderById(folderResult.categoryFolder.id);
+    var files = categoryFolder.getFilesByName("Grading Workbook");
+
+    if (files.hasNext()) {
+      var existingFile = files.next();
+      return { success: true, workbook: { id: existingFile.getId(), name: existingFile.getName() }, message: 'Found existing Grading Workbook.' };
+    }
+
+    var ss = SpreadsheetApp.create("Grading Workbook");
+    var newFile = DriveApp.getFileById(ss.getId());
+    newFile.moveTo(categoryFolder);
+
+    return { success: true, workbook: { id: newFile.getId(), name: newFile.getName() }, message: 'Created new Grading Workbook.' };
+  }
+
   return {
     ensureRubricsLibraryStructure: ensureRubricsLibraryStructure,
     ensureCourseCategoryFolderPath: ensureCourseCategoryFolderPath,
+    ensureGradingWorkbook: ensureGradingWorkbook,
     addCourseToIndex: addCourseToIndex,
     addCategoryToIndex: addCategoryToIndex,
     addTaskToIndex: addTaskToIndex,
