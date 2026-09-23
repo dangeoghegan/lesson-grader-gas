@@ -866,6 +866,7 @@ var RubricsLibrary = (function() {
   }
 
   return {
+    ROOT_FOLDER_NAME: ROOT_FOLDER_NAME,
     ensureRubricsLibraryStructure: ensureRubricsLibraryStructure,
     ensureCourseCategoryFolderPath: ensureCourseCategoryFolderPath,
     ensureGradingWorkbook: ensureGradingWorkbook,
@@ -2210,8 +2211,9 @@ function repairAssessmentSystemAndImport() {
 function apiListSharedRubrics() {
   var sharedRubrics = [];
   try {
+    RubricsLibrary.ensureRubricsLibraryStructure();
     var root = DriveApp.getRootFolder();
-    var libFolders = root.getFoldersByName('Graded Assessments');
+    var libFolders = root.getFoldersByName(RubricsLibrary.ROOT_FOLDER_NAME || 'Graded Assessments');
     if (libFolders.hasNext()) {
       var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
       if (sharedFolders.hasNext()) {
@@ -2220,10 +2222,16 @@ function apiListSharedRubrics() {
           var f = files.next();
           sharedRubrics.push({ id: f.getId(), name: f.getName() });
         }
+      } else {
+        // No rubrics folder yet, return empty list instead of failing
+        Logger.log("Shared Rubrics folder missing.");
       }
+    } else {
+      Logger.log("Root library folder missing.");
     }
   } catch(e) {
-    Logger.log("Error fetching shared rubrics: " + e);
+    // Keep logger, return empty array without breaking UI
+    Logger.log("Error fetching shared rubrics: " + e.message);
   }
   return sharedRubrics;
 }
@@ -2254,20 +2262,11 @@ function apiGetGradingSetupData() {
   }
 
   try {
-    var root = DriveApp.getRootFolder();
-    var libFolders = root.getFoldersByName('Graded Assessments');
-    if (libFolders.hasNext()) {
-      var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
-      if (sharedFolders.hasNext()) {
-        var files = sharedFolders.next().getFilesByType(MimeType.GOOGLE_SHEETS);
-        while (files.hasNext()) {
-          var f = files.next();
-          sharedRubrics.push({ id: f.getId(), name: f.getName() });
-        }
-      }
-    }
-  } catch(e) {
-    Logger.log("Error fetching shared rubrics: " + e);
+    sharedRubrics = apiListSharedRubrics();
+  } catch (e) {
+    Logger.log("apiGetGradingSetupData: " + e.message);
+    // Continue execution to return courses/categories/tasks even if rubrics fail,
+    // letting the UI render but without a populated rubrics list.
   }
 
   return { courses: courses, categories: categories, tasks: tasks, sharedRubrics: sharedRubrics };
@@ -2292,8 +2291,9 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
   var rubricFileId = "";
   if (rubricSelection === "__NEW__" && newRubricName) {
     try {
+      RubricsLibrary.ensureRubricsLibraryStructure();
       var root = DriveApp.getRootFolder();
-      var libFolders = root.getFoldersByName('Graded Assessments');
+      var libFolders = root.getFoldersByName(RubricsLibrary.ROOT_FOLDER_NAME || 'Graded Assessments');
       if (libFolders.hasNext()) {
         var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
         if (sharedFolders.hasNext()) {
@@ -2306,7 +2306,7 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
           return { success: false, message: 'Failed to create new rubric file: Shared Rubrics folder not found.' };
         }
       } else {
-        return { success: false, message: 'Failed to create new rubric file: Graded Assessments folder not found.' };
+        return { success: false, message: 'Failed to create new rubric file: Root library folder not found.' };
       }
     } catch(e) {
       return { success: false, message: 'Failed to create new rubric file: ' + e.message };
