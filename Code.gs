@@ -1344,18 +1344,69 @@ var ClassroomService = (function() {
 
   function listCourseWork(courseId) {
     try {
-      var res = Classroom.Courses.CourseWork.list(courseId, { courseWorkStates: ['PUBLISHED'], pageSize: 50 });
-      var cwList = [];
-      var raw = res.courseWork || [];
-      for (var i = 0; i < raw.length; i++) {
-        var cw = raw[i];
-        var due = cw.dueDate ? (cw.dueDate.year + '-' + (cw.dueDate.month < 10 ? '0' : '') + cw.dueDate.month + '-' + (cw.dueDate.day < 10 ? '0' : '') + cw.dueDate.day) : '';
-        cwList.push({ id: cw.id, title: cw.title, maxPoints: cw.maxPoints || 100, dueDate: due, state: cw.state });
-      }
-      return { success: true, coursework: cwList };
+      var coursework = [];
+      var pageToken = null;
+
+      do {
+        var params = {
+          pageSize: 100
+        };
+
+        if (pageToken) {
+          params.pageToken = pageToken;
+        }
+
+        var res = Classroom.Courses.CourseWork.list(
+          String(courseId),
+          params
+        );
+
+        var raw = (res && res.courseWork) ? res.courseWork : [];
+
+        for (var i = 0; i < raw.length; i++) {
+          var cw = raw[i];
+
+          var dueDate = '';
+          if (cw.dueDate) {
+            var month = cw.dueDate.month < 10
+              ? '0' + cw.dueDate.month
+              : String(cw.dueDate.month);
+
+            var day = cw.dueDate.day < 10
+              ? '0' + cw.dueDate.day
+              : String(cw.dueDate.day);
+
+            dueDate = String(cw.dueDate.year) + '-' + month + '-' + day;
+          }
+
+          coursework.push({
+            id: cw.id,
+            title: cw.title || '(Untitled assignment)',
+            maxPoints: cw.maxPoints || 0,
+            dueDate: dueDate,
+            state: cw.state || ''
+          });
+        }
+
+        pageToken = (res && res.nextPageToken) ? res.nextPageToken : null;
+      } while (pageToken);
+
+      coursework.sort(function(a, b) {
+        var aTitle = String(a.title || '').toLowerCase();
+        var bTitle = String(b.title || '').toLowerCase();
+        return aTitle < bTitle ? -1 : (aTitle > bTitle ? 1 : 0);
+      });
+
+      return {
+        success: true,
+        coursework: coursework
+      };
     } catch (err) {
-      Logging.logError('listCourseWork', err);
-      return { success: false, message: 'CourseWork error: ' + Utils.sanitizeError(err) };
+      Logging.logError('listCourseWork', err, { courseId: courseId });
+      return {
+        success: false,
+        message: 'Coursework error: ' + Utils.sanitizeError(err)
+      };
     }
   }
 
@@ -2832,6 +2883,42 @@ function apiPrepareSingleFileForAi(submissionRecordId, driveFileId) {
 
 function apiRunAiAssessmentWithFiles(submissionRecordId, preparedFiles) {
   return GeminiService.runAiAssessmentWithPreparedFiles(submissionRecordId, preparedFiles);
+}
+
+function doGet(e) {
+  var template = HtmlService.createTemplateFromFile('WebApp');
+
+  template.webAppTitle = 'Lesson Grader';
+  template.initialPage = (
+    e &&
+    e.parameter &&
+    e.parameter.page
+  ) ? String(e.parameter.page) : 'home';
+
+  return template
+    .evaluate()
+    .setTitle('Lesson Grader')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function apiGetWebAppStatus() {
+  try {
+    return {
+      success: true,
+      message: 'Lesson Grader web app is available.'
+    };
+  } catch (err) {
+    Logging.logError('apiGetWebAppStatus', err, {});
+    return {
+      success: false,
+      message: 'Unable to initialise the Lesson Grader web app: ' +
+        Utils.sanitizeError(err)
+    };
+  }
 }
 
 /* --- Batch Class AI Endpoints --- */

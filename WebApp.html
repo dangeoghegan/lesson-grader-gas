@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        --bg: #f7f9fc;
+        --surface: #ffffff;
+        --text: #172b4d;
+        --muted: #5e6c84;
+        --border: #dfe1e6;
+        --primary: #0052cc;
+        --primary-hover: #0747a6;
+        --shadow: 0 1px 4px rgba(9, 30, 66, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 16px 24px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        box-shadow: var(--shadow);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      main {
+        width: min(1100px, calc(100% - 32px));
+        margin: 32px auto;
+      }
+
+      .hero {
+        padding: 28px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero h2 {
+        margin: 0 0 10px;
+        font-size: 24px;
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .notice {
+        margin-top: 20px;
+        padding: 16px;
+        border: 1px solid #b3d4ff;
+        border-radius: 8px;
+        background: #deebff;
+        color: #0747a6;
+        line-height: 1.5;
+      }
+
+      .status {
+        margin-top: 20px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .error {
+        color: #bf2600;
+      }
+
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1><?= webAppTitle ?></h1>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h2>Lesson Grader web app</h2>
+        <p>
+          This deployment provides a browser-accessible entry point for Lesson
+          Grader while preserving the existing Google Sheets integration.
+        </p>
+
+        <div class="notice">
+          Open an existing grading workbook from Google Drive or Google Sheets
+          to use the full spreadsheet-integrated grading workflow. The web app
+          is intentionally safe to deploy without changing existing workbook,
+          rubric, Google Classroom, or Gemini processing behavior.
+        </div>
+
+        <div id="status" class="status">Loading application status…</div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        var status = document.getElementById('status');
+
+        function setStatus(message, isError) {
+          status.textContent = message;
+          status.className = isError ? 'status error' : 'status';
+        }
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            if (result && result.success) {
+              setStatus(
+                'Web app is ready. Open a grading workbook to begin grading.'
+              );
+              return;
+            }
+
+            setStatus(
+              (result && result.message) ||
+              'The web app loaded, but initial status could not be confirmed.',
+              true
+            );
+          })
+          .withFailureHandler(function (error) {
+            var message = error && error.message
+              ? error.message
+              : 'The web app loaded, but initial status could not be confirmed.';
+
+            setStatus(message, true);
+          })
+          .apiGetWebAppStatus();
+      }());
+    </script>
+  </body>
+</html>
