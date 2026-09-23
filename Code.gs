@@ -2214,6 +2214,98 @@ function repairAssessmentSystemAndImport() {
 }
 
 /* --- Client-Callable RPC Endpoints (google.script.run) --- */
+function apiRegenerateRubricSchema(rubricFileId) {
+  if (!rubricFileId) return { success: false, message: 'Invalid rubric ID.' };
+
+  try {
+    var ss = SpreadsheetApp.openById(rubricFileId);
+    var rubricSheet = ss.getSheetByName('Rubric');
+    if (!rubricSheet) return { success: false, message: 'Rubric tab not found in file.' };
+
+    var data = rubricSheet.getDataRange().getValues();
+    if (data.length <= 1) return { success: false, message: 'Rubric tab is empty.' };
+
+    var headers = data[0].map(function(h) { return String(h).trim(); });
+    var expected = ['Criterion', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'Description'];
+    for (var i = 0; i < expected.length; i++) {
+      if (headers.indexOf(expected[i]) === -1) {
+        return { success: false, message: 'Rubric tab missing required header: ' + expected[i] };
+      }
+    }
+
+    var cIdx = headers.indexOf('Criterion');
+    var pIdx = headers.indexOf('Part');
+    var sIdx = headers.indexOf('Section');
+    var mIdx = headers.indexOf('MaxMarks');
+    var oIdx = headers.indexOf('Outcome');
+    var bIdx = headers.indexOf('Band');
+    var dIdx = headers.indexOf('Description');
+
+    var criteriaObj = {};
+    var cCount = 1;
+    for (var r = 1; r < data.length; r++) {
+      var critTitle = String(data[r][cIdx]).trim();
+      var desc = String(data[r][dIdx]).trim();
+      var band = String(data[r][bIdx]).trim();
+      if (!critTitle || !desc || !band) continue;
+
+      if (!criteriaObj[critTitle]) {
+        var cId = 'C' + (cCount < 10 ? '0' : '') + cCount;
+        criteriaObj[critTitle] = {
+          id: cId,
+          part: data[r][pIdx],
+          section: data[r][sIdx],
+          maxMarks: data[r][mIdx],
+          outcome: data[r][oIdx],
+          bands: {}
+        };
+        cCount++;
+      }
+      var cData = criteriaObj[critTitle];
+      if (!cData.bands[band]) cData.bands[band] = [];
+      cData.bands[band].push(desc);
+    }
+
+    var rows = [];
+    rows.push(['CriterionID', 'CriterionTitle', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'ThresholdType', 'RequiredCount', 'CheckboxID', 'CheckboxLabel', 'EvidenceFocus', 'IsMissingDistinctOverride']);
+
+    for (var title in criteriaObj) {
+      var c = criteriaObj[title];
+      var mdId = c.id + '-MD';
+      var mdText = "Missing / Distinct: exceptionally refined evidence.";
+      rows.push([c.id, title, c.part, c.section, c.maxMarks, c.outcome, 'A', 'Override', 1, mdId, mdText, 'Distinct Evidence', true]);
+
+      var bandsOrder = ['A', 'B', 'C', 'D', 'E'];
+      for (var b = 0; b < bandsOrder.length; b++) {
+        var bName = bandsOrder[b];
+        var items = c.bands[bName] || [];
+        var req = (bName === 'A') ? items.length : Math.ceil(items.length * 2 / 3);
+        for (var k = 0; k < items.length; k++) {
+          var cbId = c.id + '-' + bName + '-' + (k + 1);
+          rows.push([c.id, title, c.part, c.section, c.maxMarks, c.outcome, bName, (bName === 'A' ? 'All' : 'TwoThirds'), req, cbId, items[k], 'Observable', false]);
+        }
+      }
+    }
+
+    if (rows.length <= 1) return { success: false, message: 'No valid data found to generate criteria.' };
+
+    var criteriaSheet = ss.getSheetByName('Criteria');
+    if (!criteriaSheet) {
+      criteriaSheet = ss.insertSheet('Criteria');
+      criteriaSheet.hideSheet();
+    }
+
+    criteriaSheet.clear();
+    criteriaSheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+    criteriaSheet.getRange(1, 1, 1, rows[0].length).setFontWeight('bold');
+
+    return { success: true, message: 'Successfully generated ' + (rows.length - 1) + ' criteria rows.' };
+
+  } catch (err) {
+    return { success: false, message: 'Error generating schema: ' + err.message };
+  }
+}
+
 function apiListSharedRubrics() {
   var sharedRubrics = [];
   try {
@@ -2305,6 +2397,20 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
         if (sharedFolders.hasNext()) {
           var sharedRubricsFolder = sharedFolders.next();
           var newRubricSS = SpreadsheetApp.create(newRubricName);
+
+          var rubricSheet = newRubricSS.insertSheet("Rubric");
+          rubricSheet.appendRow(['Criterion', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'Description']);
+          rubricSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+          newRubricSS.setActiveSheet(rubricSheet);
+
+          var criteriaSheet = newRubricSS.insertSheet("Criteria");
+          criteriaSheet.appendRow(['CriterionID', 'CriterionTitle', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'ThresholdType', 'RequiredCount', 'CheckboxID', 'CheckboxLabel', 'EvidenceFocus', 'IsMissingDistinctOverride']);
+          criteriaSheet.getRange(1, 1, 1, 13).setFontWeight('bold');
+          criteriaSheet.hideSheet();
+
+          var sheet1 = newRubricSS.getSheetByName("Sheet1");
+          if (sheet1) newRubricSS.deleteSheet(sheet1);
+
           var newRubricFile = DriveApp.getFileById(newRubricSS.getId());
           newRubricFile.moveTo(sharedRubricsFolder);
           rubricFileId = newRubricFile.getId();
