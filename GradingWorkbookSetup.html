@@ -125,11 +125,14 @@
     </div>
 
     <button id="submitBtn" onclick="submitForm()">Create / Open Workbook</button>
+    <button id="linkClassroomBtn" style="display:none; background-color:#34a853; margin-top:10px;" onclick="openCourseworkPicker()">Link Classroom Assignment</button>
 
     <div id="status"></div>
 
     <script>
       let backendData = { courses: [], categories: [], tasks: [], sharedRubrics: [] };
+      let lastCreatedCourseCode = '';
+      let lastCreatedTaskName = '';
 
       window.onload = function() {
         document.getElementById('year').value = new Date().getFullYear();
@@ -276,12 +279,22 @@
             document.getElementById('submitBtn').innerText = 'Create / Open Workbook';
             if (res.success) {
               showStatus("Success! " + res.message, false);
+              lastCreatedCourseCode = courseCode;
+              lastCreatedTaskName = taskName;
+              document.getElementById('linkClassroomBtn').style.display = 'block';
             } else {
               showStatus("Error: " + res.message, true);
+              document.getElementById('linkClassroomBtn').style.display = 'none';
             }
           })
           .withFailureHandler(showError)
           .apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName);
+      }
+
+      function openCourseworkPicker() {
+        if (!lastCreatedCourseCode || !lastCreatedTaskName) return;
+        google.script.run.openClassroomPickerForTask(lastCreatedCourseCode, lastCreatedTaskName);
+        google.script.host.close();
       }
     </script>
   </body>

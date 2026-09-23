@@ -98,7 +98,14 @@
     var coursesMap = {};
     var assignmentsMap = {};
 
+    // Inject parameters from Apps Script template context
+    var passedCourseCode = "<?= typeof passedCourseCode !== 'undefined' ? passedCourseCode : '' ?>";
+    var passedTaskName = "<?= typeof passedTaskName !== 'undefined' ? passedTaskName : '' ?>";
+
     window.onload = function() {
+      if (passedTaskName) {
+        document.querySelector('h2').innerText = "Link Classroom to Task: " + passedTaskName;
+      }
       loadCourses();
     };
 
@@ -160,12 +167,18 @@
           var cwList = res.coursework || [];
           aSelect.innerHTML = '<option value="">-- Choose an assignment --</option>';
           assignmentsMap = {};
-          if (!cwList.length) {
-            aSelect.innerHTML = '<option value="">-- No published assignments found --</option>';
-            showStatus('No published assignments found in this course.', 'error');
+
+          // Filter coursework: ONLY show assignments that HAVE a due date.
+          var filteredCwList = cwList.filter(function(cw) {
+            return cw.dueDate && Object.keys(cw.dueDate).length > 0 && cw.dueDate !== 'No due date set';
+          });
+
+          if (!filteredCwList.length) {
+            aSelect.innerHTML = '<option value="">-- No valid assignments found --</option>';
+            showStatus('No published assignments with a Due Date found in this course.', 'error');
             return;
           }
-          cwList.forEach(function(cw) {
+          filteredCwList.forEach(function(cw) {
             assignmentsMap[cw.id] = cw;
             var opt = document.createElement('option');
             opt.value = cw.id;
@@ -209,7 +222,7 @@
       saveBtn.disabled = true;
       showStatus('<span class="spinner"></span> Saving Classroom configuration...', '');
 
-      google.script.run
+      var handler = google.script.run
         .withSuccessHandler(function(res) {
           if (res.success) {
             showStatus('Configuration saved! You can now import submissions.', 'success');
@@ -224,8 +237,13 @@
         .withFailureHandler(function(err) {
           showStatus('Error saving selection: ' + err.message, 'error');
           saveBtn.disabled = false;
-        })
-        .apiSaveClassroomSelection(courseId, cwId);
+        });
+
+      if (passedTaskName) {
+        handler.apiSaveClassroomSelectionForTask(courseId, cwId, passedTaskName);
+      } else {
+        handler.apiSaveClassroomSelection(courseId, cwId);
+      }
     }
 
     function showStatus(html, type) {
