@@ -857,19 +857,34 @@ var RubricsLibrary = (function() {
     }
 
     var categoryFolder = DriveApp.getFolderById(folderResult.categoryFolder.id);
-    var workbookName = courseCode + ' [' + year + '] - ' + taskName + ' - Grading';
-    var files = categoryFolder.getFilesByName(workbookName);
 
+    // Required filename format:
+    // Example: 7TECHI [2026] - Rube Goldberg Task - Grading
+    var workbookName = String(courseCode).trim() +
+      ' [' + String(year).trim() + '] - ' +
+      String(taskName).trim() +
+      ' - Grading';
+
+    // Reuse the already-created workbook for this exact course/year/task.
+    var files = categoryFolder.getFilesByName(workbookName);
     if (files.hasNext()) {
       var existingFile = files.next();
-      return { success: true, workbook: { id: existingFile.getId(), name: existingFile.getName() }, message: 'Found existing Grading Workbook.' };
+      return {
+        success: true,
+        workbook: { id: existingFile.getId(), name: existingFile.getName() },
+        message: 'Found existing grading workbook: ' + workbookName
+      };
     }
 
     var ss = SpreadsheetApp.create(workbookName);
     var newFile = DriveApp.getFileById(ss.getId());
     newFile.moveTo(categoryFolder);
 
-    return { success: true, workbook: { id: newFile.getId(), name: newFile.getName() }, message: 'Created new Grading Workbook.' };
+    return {
+      success: true,
+      workbook: { id: newFile.getId(), name: newFile.getName() },
+      message: 'Created grading workbook: ' + workbookName
+    };
   }
 
   return {
@@ -2510,18 +2525,32 @@ function apiGetGradingSetupData() {
 }
 
 function deriveStageFromCourseCode(courseCode) {
-  if (!courseCode) return null;
-  if (courseCode.startsWith('7') || courseCode.startsWith('8')) return 'Stage 4';
-  if (courseCode.startsWith('9') || courseCode.startsWith('10')) return 'Stage 5';
-  if (courseCode.startsWith('11') || courseCode.startsWith('12')) return 'Stage 6';
+  var code = String(courseCode || '').trim();
+
+  if (code.indexOf('7') === 0 || code.indexOf('8') === 0) {
+    return 'Stage 4';
+  }
+
+  if (code.indexOf('9') === 0 || code.indexOf('10') === 0) {
+    return 'Stage 5';
+  }
+
+  if (code.indexOf('11') === 0 || code.indexOf('12') === 0) {
+    return 'Stage 6';
+  }
+
   return null;
 }
 
 function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName) {
-  // 1. Derive stage from course code dynamically
+  // Ignore the Stage value supplied by the UI. The folder stage is derived
+  // from the Course Code so a valid course is always placed correctly.
   var derivedStage = deriveStageFromCourseCode(courseCode);
   if (!derivedStage) {
-    return { success: false, message: 'Invalid Course Code. Must start with 7, 8, 9, 10, 11, or 12.' };
+    return {
+      success: false,
+      message: 'Unable to determine Stage from Course Code. Course Code must begin with 7, 8, 9, 10, 11, or 12.'
+    };
   }
 
   // 2. Handle Rubric (Create new or use existing)
@@ -2567,7 +2596,13 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
   }
 
   // 3. Call ensureGradingWorkbook
-  var result = RubricsLibrary.ensureGradingWorkbook(derivedStage, courseCode, categoryName, year, taskName);
+  var result = RubricsLibrary.ensureGradingWorkbook(
+    derivedStage,
+    courseCode,
+    categoryName,
+    year,
+    taskName
+  );
   if (!result.success) {
     return result; // Bubble up error
   }
