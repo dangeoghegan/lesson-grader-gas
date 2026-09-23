@@ -761,7 +761,13 @@ var RubricsLibrary = (function() {
     var data = sheet.getDataRange().getValues();
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][0]) === String(courseCode) && String(data[r][1]) === String(categoryName) && String(data[r][2]) === String(taskName)) {
-        // Task already exists, do not modify RubricFileId. Returns false (no new row created).
+        // Task already exists. If RubricFileId is empty/blank, update it and return true.
+        // Otherwise, it is immutable, do nothing and return false.
+        var existingRubricId = data[r][3] || "";
+        if (existingRubricId === "" && rubricFileId) {
+          sheet.getRange(r + 1, 4).setValue(rubricFileId);
+          return true;
+        }
         return false;
       }
     }
