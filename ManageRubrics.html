@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        padding: 20px;
+        color: #333;
+      }
+      h2 {
+        font-size: 18px;
+        margin-top: 0;
+        margin-bottom: 20px;
+        color: #1a73e8;
+      }
+      .rubric-list {
+        list-style-type: none;
+        padding: 0;
+      }
+      .rubric-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+      }
+      .rubric-name {
+        font-weight: 500;
+        font-size: 14px;
+      }
+      .btn-open {
+        background-color: #f1f3f4;
+        color: #1a73e8;
+        border: 1px solid #dadce0;
+        padding: 6px 12px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .btn-open:hover {
+        background-color: #e8f0fe;
+      }
+      #status {
+        margin-top: 15px;
+        font-size: 13px;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Manage Shared Rubrics</h2>
+    <div id="status">Loading rubrics...</div>
+    <ul id="rubricList" class="rubric-list"></ul>
+
+    <script>
+      window.onload = function() {
+        google.script.run
+          .withSuccessHandler(function(rubrics) {
+            const list = document.getElementById('rubricList');
+            const status = document.getElementById('status');
+
+            if (!rubrics || rubrics.length === 0) {
+              status.innerText = "No shared rubrics found. Create one during Task setup.";
+              return;
+            }
+
+            status.style.display = 'none';
+
+            rubrics.forEach(r => {
+              const li = document.createElement('li');
+              li.className = 'rubric-item';
+
+              const nameSpan = document.createElement('span');
+              nameSpan.className = 'rubric-name';
+              nameSpan.textContent = r.name;
+
+              const openLink = document.createElement('a');
+              openLink.className = 'btn-open';
+              openLink.textContent = 'Open in Drive';
+              openLink.href = 'https://docs.google.com/spreadsheets/d/' + r.id + '/edit';
+              openLink.target = '_blank';
+
+              li.appendChild(nameSpan);
+              li.appendChild(openLink);
+              list.appendChild(li);
+            });
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('status').innerText = "Error loading rubrics: " + err.message;
+            document.getElementById('status').style.color = '#d93025';
+          })
+          .apiListSharedRubrics();
+      };
+    </script>
+  </body>
+</html>
