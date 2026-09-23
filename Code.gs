@@ -433,7 +433,7 @@ var Sheets = (function() {
     var schemas = [
       { name: 'RubricProfiles', headers: ['ProfileID', 'ProfileName', 'JSONDefinition', 'CreatedAt'] },
       { name: 'ClassLists', headers: ['ClassID', 'OfficialName', 'PreferredName', 'SchoolEmail', 'Active'] },
-      { name: Config.SHEET_CLASSROOM_CONFIG, headers: ['ConfigID', 'CourseID', 'CourseName', 'CourseSection', 'CourseWorkID', 'AssignmentTitle', 'MaxPoints', 'SavedAt', 'SavedBy', 'Active'] },
+      { name: Config.SHEET_CLASSROOM_CONFIG, headers: ['ConfigID', 'CourseID', 'CourseName', 'CourseSection', 'CourseWorkID', 'AssignmentTitle', 'MaxPoints', 'SavedAt', 'SavedBy', 'Active', 'TaskName', 'DueDate', 'AutoImported'] },
       { name: Config.SHEET_SUBMISSIONS, headers: ['SubmissionRecordID', 'ClassroomCourseID', 'ClassroomCourseWorkID', 'ClassroomSubmissionID', 'StudentUserID', 'StudentName', 'StudentEmail', 'Class', 'Task', 'SubmissionVersion', 'SourceType', 'ClassroomState', 'TurnedInTime', 'UpdateTime', 'Late', 'AttachmentSummary', 'AttachmentFileIDsJSON', 'AttachmentMetadataJSON', 'DriveFolderID', 'Status', 'ParentSubmissionRecordID', 'CurrentOfficial', 'LockedAt', 'LockedBy', 'ApprovedAt', 'ApprovedBy', 'ClassroomAssignedGrade', 'LastClassroomSyncAt', 'LastSyncResult', 'Notes'] },
       { name: Config.SHEET_SUBMISSION_FILES, headers: ['SubmissionRecordID', 'FileRecordID', 'SourceType', 'DriveFileID', 'FileName', 'MimeType', 'AlternateLink', 'ThumbnailUrl', 'FileSize', 'EligibleForAI', 'AIReviewStatus', 'AIExtractedText', 'Limitations', 'CreatedAt'] },
       { name: Config.SHEET_CRITERIA_CONFIG, headers: ['CriterionID', 'CriterionTitle', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'ThresholdType', 'RequiredCount', 'CheckboxID', 'CheckboxLabel', 'EvidenceFocus', 'IsMissingDistinctOverride'] },
@@ -1354,11 +1354,118 @@ var ClassroomService = (function() {
       var data = sheet.getDataRange().getValues();
       for (var r = 1; r < data.length; r++) sheet.getRange(r + 1, 10).setValue(false);
 
-      sheet.appendRow([Utils.generateUuid(), courseId, course.name || '', course.section || '', courseWorkId, cw.title || '', cw.maxPoints || 100, Utils.formatDate(new Date()), Utils.getSafeUserEmail(), true]);
+      sheet.appendRow([Utils.generateUuid(), courseId, course.name || '', course.section || '', courseWorkId, cw.title || '', cw.maxPoints || 100, Utils.formatDate(new Date()), Utils.getSafeUserEmail(), true, '', '', '']);
       return { success: true, message: 'Saved assignment: ' + cw.title };
     } catch (err) {
       Logging.logError('saveClassroomSelection', err);
       return { success: false, message: 'Save selection error: ' + Utils.sanitizeError(err) };
+    }
+  }
+
+  function saveClassroomSelectionForTask(courseId, courseWorkId, taskName) {
+    try {
+      var course = Classroom.Courses.get(courseId);
+      var cw = Classroom.Courses.CourseWork.get(courseId, courseWorkId);
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName(Config.SHEET_CLASSROOM_CONFIG);
+      if (!sheet) { Sheets.setupOrMigrateAssessmentSystem(); sheet = ss.getSheetByName(Config.SHEET_CLASSROOM_CONFIG); }
+
+      // We do NOT set other rows to Active: false here.
+      // Multiple rows may have Active: true simultaneously as long as they have a distinct TaskName.
+
+      var dueStr = '';
+      if (cw.dueDate) {
+        var yy = cw.dueDate.year;
+        var mm = cw.dueDate.month < 10 ? '0' + cw.dueDate.month : cw.dueDate.month;
+        var dd = cw.dueDate.day < 10 ? '0' + cw.dueDate.day : cw.dueDate.day;
+        var hh = (cw.dueTime && cw.dueTime.hours) ? (cw.dueTime.hours < 10 ? '0' + cw.dueTime.hours : cw.dueTime.hours) : '23';
+        var min = (cw.dueTime && cw.dueTime.minutes) ? (cw.dueTime.minutes < 10 ? '0' + cw.dueTime.minutes : cw.dueTime.minutes) : '59';
+        dueStr = yy + '-' + mm + '-' + dd + 'T' + hh + ':' + min + ':00Z'; // Construct ISO roughly
+      }
+
+      sheet.appendRow([
+        Utils.generateUuid(), courseId, course.name || '', course.section || '', courseWorkId,
+        cw.title || '', cw.maxPoints || 100, Utils.formatDate(new Date()), Utils.getSafeUserEmail(),
+        true, taskName, dueStr, false
+      ]);
+      return { success: true, message: 'Saved assignment for task: ' + taskName };
+    } catch (err) {
+      Logging.logError('saveClassroomSelectionForTask', err);
+      return { success: false, message: 'Save selection error: ' + Utils.sanitizeError(err) };
+    }
+  }
+
+  function checkAndAutoImportDueAssignments() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(Config.SHEET_CLASSROOM_CONFIG);
+    if (!sheet) return;
+
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+
+    // Header indices
+    var hConfigId = headers.indexOf('ConfigID');
+    var hCourseId = headers.indexOf('CourseID');
+    var hCourseWorkId = headers.indexOf('CourseWorkID');
+    var hActive = headers.indexOf('Active');
+    var hDueDate = headers.indexOf('DueDate');
+    var hAutoImported = headers.indexOf('AutoImported');
+
+    if (hDueDate === -1 || hAutoImported === -1 || hActive === -1) return; // Not migrated
+
+    var now = new Date();
+
+    for (var r = 1; r < data.length; r++) {
+      var row = data[r];
+      var isActive = row[hActive] === true || row[hActive] === 'TRUE' || row[hActive] === 'true';
+      var autoImported = row[hAutoImported] === true || row[hAutoImported] === 'TRUE' || row[hAutoImported] === 'true';
+      var dueDateStr = row[hDueDate];
+
+      if (isActive && !autoImported && dueDateStr) {
+        var dueDateObj = new Date(dueDateStr);
+        if (!isNaN(dueDateObj.getTime()) && dueDateObj < now) {
+          // Time to auto-import this specific assignment
+          try {
+            // Re-use logic to mock getActiveClassroomConfig just for this call context
+            // by injecting the CourseID and CourseWorkID explicitly into the import function.
+            // Since importOrRefreshClassroomSubmissions currently relies on getActiveClassroomConfig(),
+            // we will pass the row config directly.
+
+            var cfg = {
+              CourseID: row[hCourseId],
+              CourseWorkID: row[hCourseWorkId],
+              CourseName: row[headers.indexOf('CourseName')],
+              AssignmentTitle: row[headers.indexOf('AssignmentTitle')]
+            };
+
+            var importResult = ClassroomService.importOrRefreshClassroomSubmissions(cfg); // Modify signature
+
+            if (importResult.success && importResult.stats) {
+              // Iterate new or updated submissions from this import and trigger grading
+              var sSheet = ss.getSheetByName(Config.SHEET_SUBMISSIONS);
+              var sData = sSheet.getDataRange().getValues();
+
+              for (var s = 1; s < sData.length; s++) {
+                // If it's a NEW status and matches our assignment, auto-grade
+                if (sData[s][1] === cfg.CourseID && sData[s][2] === cfg.CourseWorkID && sData[s][19] === Config.STATUS.NEW) {
+                  try {
+                    var subId = sData[s][0];
+                    GeminiService.runInitialAiAssessment(subId);
+                  } catch (e) {
+                    Logging.logError('checkAndAutoImportDueAssignments (Grading)', e);
+                  }
+                }
+              }
+            }
+
+            // Mark as AutoImported
+            sheet.getRange(r + 1, hAutoImported + 1).setValue(true);
+
+          } catch (e) {
+            Logging.logError('checkAndAutoImportDueAssignments (Row ' + r + ')', e);
+          }
+        }
+      }
     }
   }
 
@@ -1385,8 +1492,8 @@ var ClassroomService = (function() {
     return all;
   }
 
-  function importOrRefreshClassroomSubmissions() {
-    var cfg = getActiveClassroomConfig();
+  function importOrRefreshClassroomSubmissions(overrideCfg) {
+    var cfg = overrideCfg || getActiveClassroomConfig();
     if (!cfg) return { success: false, message: 'No active Classroom assignment configured. Please select one via Classroom menu.' };
 
     var rosterMap = RosterService.getClassRosterMap(cfg.CourseName);
@@ -1656,8 +1763,22 @@ var ClassroomService = (function() {
     }
   }
 
-  return { listTeacherCourses: listTeacherCourses, listCourseWork: listCourseWork, saveClassroomSelection: saveClassroomSelection, getActiveClassroomConfig: getActiveClassroomConfig, importOrRefreshClassroomSubmissions: importOrRefreshClassroomSubmissions, syncClassListFromClassroom: syncClassListFromClassroom, syncAssessmentToClassroom: syncAssessmentToClassroom };
+  return { listTeacherCourses: listTeacherCourses, listCourseWork: listCourseWork, saveClassroomSelection: saveClassroomSelection, saveClassroomSelectionForTask: saveClassroomSelectionForTask, getActiveClassroomConfig: getActiveClassroomConfig, importOrRefreshClassroomSubmissions: importOrRefreshClassroomSubmissions, syncClassListFromClassroom: syncClassListFromClassroom, syncAssessmentToClassroom: syncAssessmentToClassroom, checkAndAutoImportDueAssignments: checkAndAutoImportDueAssignments };
 })();
+
+function installAutoImportTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'checkAndAutoImportDueAssignments') {
+      return { success: false, message: 'Auto-import trigger is already installed.' };
+    }
+  }
+  ScriptApp.newTrigger('checkAndAutoImportDueAssignments')
+    .timeBased()
+    .everyHours(1)
+    .create();
+  return { success: true, message: 'Auto-import trigger installed successfully. It will check for due assignments every hour.' };
+}
 
 /* ============================================================================
  * SECTION 7: HIGH-ACCURACY GEMINI ENGINE (INDEPENDENT BAND TICKING)
@@ -2055,6 +2176,7 @@ function onOpen() {
       .addItem('Test Gemini Connection', 'testGeminiConnectionUi'))
     .addSeparator()
     .addSubMenu(ui.createMenu('Administration')
+      .addItem('Enable Hourly Auto-Import', 'installAutoImportTriggerUi')
       .addItem('Create Reassessment', 'createReassessmentUi')
       .addItem('View Error Log', 'viewErrorLogUi')
       .addItem('Verify Config & Sheets (Diagnostic)', 'verifySubmissionSystem')
@@ -2105,6 +2227,17 @@ function openClassroomPicker() {
     .setHeight(480)
     .setTitle('Select Classroom Course and Assignment');
   SpreadsheetApp.getUi().showModalDialog(html, 'Select Classroom Course and Assignment');
+}
+
+function openClassroomPickerForTask(courseCode, taskName) {
+  var template = HtmlService.createTemplateFromFile('CourseworkPicker');
+  template.passedCourseCode = courseCode;
+  template.passedTaskName = taskName;
+  var html = template.evaluate()
+    .setWidth(620)
+    .setHeight(480)
+    .setTitle('Link Classroom to Task');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Link Classroom to Task');
 }
 
 function openVoiceDictation(criterionId) {
@@ -2167,6 +2300,11 @@ function syncClassListFromClassroomUi() {
 
 function syncApprovedAssessmentToClassroomUi() {
   SpreadsheetApp.getUi().alert('Classroom Sync', 'Please open Assessment Studio and click "Sync" for the desired student.', SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function installAutoImportTriggerUi() {
+  var out = installAutoImportTrigger();
+  SpreadsheetApp.getUi().alert(out.success ? 'Success' : 'Notice', out.message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 function createReassessmentUi() {
