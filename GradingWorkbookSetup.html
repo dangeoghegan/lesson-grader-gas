@@ -81,21 +81,12 @@
     <h2>Create / Open Grading Workbook</h2>
 
     <div class="form-group">
-      <label for="stage">Stage</label>
-      <select id="stage" onchange="updateCourseDropdown()">
-        <option value="Stage 4">Stage 4 (Years 7-8)</option>
-        <option value="Stage 5">Stage 5 (Years 9-10)</option>
-        <option value="Stage 6">Stage 6 (Years 11-12)</option>
-      </select>
-    </div>
-
-    <div class="form-group">
       <label for="course">Course Code</label>
       <div class="combo-box">
-        <select id="courseSelect" onchange="handleCourseSelect()">
+        <select id="courseSelect">
           <option value="">-- Select Existing or Type New --</option>
         </select>
-        <input type="text" id="courseInput" placeholder="e.g. 9DAT1" oninput="clearSelect('courseSelect'); updateTaskDropdown()">
+        <input type="text" id="courseInput" placeholder="e.g. 9DAT1">
       </div>
       <div class="help-text">Must start with 7/8 for Stage 4, 9/10 for Stage 5, 11/12 for Stage 6.</div>
     </div>
@@ -103,29 +94,33 @@
     <div class="form-group">
       <label for="task">Task Name</label>
       <div class="combo-box">
-        <select id="taskSelect" onchange="handleTaskSelect()">
+        <select id="taskSelect">
           <option value="">-- Select Existing or Type New --</option>
         </select>
-        <input type="text" id="taskInput" placeholder="e.g. Jewellery Design" oninput="clearSelect('taskSelect')">
+        <input type="text" id="taskInput" placeholder="e.g. Jewellery Design">
       </div>
     </div>
 
     <div class="form-group">
       <label for="rubric">Rubric Selection</label>
-      <select id="rubricSelect" onchange="handleRubricSelect()">
+      <select id="rubricSelect">
         <option value="">-- No Rubric --</option>
-        <option value="__NEW__">+ Create New Blank Rubric</option>
+        <option value="__UPLOAD__">+ Upload Rubric Document</option>
       </select>
-      <input type="text" id="newRubricInput" placeholder="New Rubric Name" style="display:none; margin-top:8px;">
+      <div id="uploadContainer" style="display:none; margin-top:8px;">
+        <input type="text" id="newRubricInput" placeholder="New Rubric Name" style="margin-bottom:8px;">
+        <input type="file" id="rubricDocumentInput" accept=".pdf,.md,.txt,application/pdf,text/markdown,text/plain">
+        <div class="help-text">Upload a PDF or Markdown rubric. The system will create an editable Rubric tab and a hidden machine-readable Criteria tab.</div>
+      </div>
     </div>
 
     <div class="form-group">
       <label for="year">Year</label>
-      <input type="number" id="year" onchange="updateCourseDropdown()" required>
+      <input type="number" id="year" required>
     </div>
 
-    <button id="submitBtn" onclick="submitForm()">Create / Open Workbook</button>
-    <button id="linkClassroomBtn" style="display:none; background-color:#34a853; margin-top:10px;" onclick="openCourseworkPicker()">Link Classroom Assignment</button>
+    <button id="submitBtn">Create / Open Workbook</button>
+    <button id="linkClassroomBtn" style="display:none; background-color:#34a853; margin-top:10px;">Link Classroom Assignment</button>
 
     <div id="status"></div>
 
@@ -138,6 +133,23 @@
         document.getElementById('year').value = new Date().getFullYear();
         document.getElementById('submitBtn').disabled = true;
         document.getElementById('submitBtn').innerText = 'Loading...';
+
+        // Bind events
+        document.getElementById('courseSelect').addEventListener('change', handleCourseSelect);
+        document.getElementById('courseInput').addEventListener('input', function() {
+          clearSelect('courseSelect');
+          updateTaskDropdown();
+        });
+
+        document.getElementById('taskSelect').addEventListener('change', handleTaskSelect);
+        document.getElementById('taskInput').addEventListener('input', function() {
+          clearSelect('taskSelect');
+        });
+
+        document.getElementById('rubricSelect').addEventListener('change', handleRubricSelect);
+        document.getElementById('year').addEventListener('change', updateCourseDropdown);
+        document.getElementById('submitBtn').addEventListener('click', submitForm);
+        document.getElementById('linkClassroomBtn').addEventListener('click', openCourseworkPicker);
 
         google.script.run
           .withSuccessHandler(function(data) {
@@ -164,23 +176,23 @@
 
       function handleRubricSelect() {
         const select = document.getElementById('rubricSelect');
-        const input = document.getElementById('newRubricInput');
-        if (select.value === '__NEW__') {
-          input.style.display = 'block';
+        const container = document.getElementById('uploadContainer');
+        if (select.value === '__UPLOAD__') {
+          container.style.display = 'block';
         } else {
-          input.style.display = 'none';
-          input.value = '';
+          container.style.display = 'none';
+          document.getElementById('newRubricInput').value = '';
+          document.getElementById('rubricDocumentInput').value = '';
         }
       }
 
       function updateCourseDropdown() {
-        const stage = document.getElementById('stage').value;
         const year = document.getElementById('year').value;
         const select = document.getElementById('courseSelect');
 
         select.innerHTML = '<option value="">-- Select Existing or Type New --</option>';
 
-        const filteredCourses = backendData.courses.filter(c => c.stage === stage && c.year.toString() === year);
+        const filteredCourses = backendData.courses.filter(c => c.year.toString() === year);
 
         // Use a Set to ensure unique course codes in the dropdown
         const uniqueCourseCodes = new Set();
@@ -251,24 +263,61 @@
       }
 
       function submitForm() {
-        const stage = document.getElementById('stage').value;
         const courseCode = document.getElementById('courseInput').value.trim();
         const categoryName = 'General';
         const taskName = document.getElementById('taskInput').value.trim();
         const year = document.getElementById('year').value;
         const rubricSelection = document.getElementById('rubricSelect').value;
         const newRubricName = document.getElementById('newRubricInput').value.trim();
+        const fileInput = document.getElementById('rubricDocumentInput');
 
         if (!courseCode || !taskName || !year) {
           showStatus("Please fill in all course/task fields.", true);
           return;
         }
 
-        if (rubricSelection === '__NEW__' && !newRubricName) {
-          showStatus("Please enter a name for the new rubric.", true);
-          return;
-        }
+        var rubricDocument = null;
+        if (rubricSelection === '__UPLOAD__') {
+          if (!newRubricName) {
+            showStatus("Please enter a name for the new rubric.", true);
+            return;
+          }
+          if (!fileInput.files || fileInput.files.length === 0) {
+             showStatus("Please select a PDF or Markdown file to upload.", true);
+             return;
+          }
 
+          const file = fileInput.files[0];
+          const reader = new FileReader();
+
+          reader.onload = function(e) {
+            const dataUrl = e.target.result;
+            rubricDocument = {
+              fileName: file.name,
+              mimeType: file.type || getMimeTypeFromExt(file.name),
+              base64: dataUrl.split(',')[1]
+            };
+            processSubmission(courseCode, categoryName, taskName, year, rubricSelection, newRubricName, rubricDocument);
+          };
+
+          reader.onerror = function() {
+            showStatus("Failed to read the selected file.", true);
+          };
+
+          reader.readAsDataURL(file);
+        } else {
+          processSubmission(courseCode, categoryName, taskName, year, rubricSelection, newRubricName, rubricDocument);
+        }
+      }
+
+      function getMimeTypeFromExt(filename) {
+        if (filename.endsWith('.md')) return 'text/markdown';
+        if (filename.endsWith('.txt')) return 'text/plain';
+        if (filename.endsWith('.pdf')) return 'application/pdf';
+        return 'application/octet-stream';
+      }
+
+      function processSubmission(courseCode, categoryName, taskName, year, rubricSelection, newRubricName, rubricDocument) {
         document.getElementById('submitBtn').disabled = true;
         document.getElementById('submitBtn').innerText = 'Processing...';
         showStatus("Creating/opening workbook...", false);
@@ -288,7 +337,7 @@
             }
           })
           .withFailureHandler(showError)
-          .apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName);
+          .apiSubmitGradingWorkbookSetup(courseCode, categoryName, taskName, year, rubricSelection, newRubricName, rubricDocument);
       }
 
       function openCourseworkPicker() {

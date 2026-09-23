@@ -2542,10 +2542,17 @@ function deriveStageFromCourseCode(courseCode) {
   return null;
 }
 
-function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName) {
-  // Ignore the Stage value supplied by the UI. The folder stage is derived
-  // from the Course Code so a valid course is always placed correctly.
+function apiSubmitGradingWorkbookSetup(
+  courseCode,
+  categoryName,
+  taskName,
+  year,
+  rubricSelection,
+  newRubricName,
+  rubricDocument
+) {
   var derivedStage = deriveStageFromCourseCode(courseCode);
+
   if (!derivedStage) {
     return {
       success: false,
@@ -2555,43 +2562,16 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
 
   // 2. Handle Rubric (Create new or use existing)
   var rubricFileId = "";
-  if (rubricSelection === "__NEW__" && newRubricName) {
-    try {
-      RubricsLibrary.ensureRubricsLibraryStructure();
-      var root = DriveApp.getRootFolder();
-      var libFolders = root.getFoldersByName(RubricsLibrary.ROOT_FOLDER_NAME || 'Graded Assessments');
-      if (libFolders.hasNext()) {
-        var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
-        if (sharedFolders.hasNext()) {
-          var sharedRubricsFolder = sharedFolders.next();
-          var newRubricSS = SpreadsheetApp.create(newRubricName);
-
-          var rubricSheet = newRubricSS.insertSheet("Rubric");
-          rubricSheet.appendRow(['Criterion', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'Description']);
-          rubricSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
-          newRubricSS.setActiveSheet(rubricSheet);
-
-          var criteriaSheet = newRubricSS.insertSheet("Criteria");
-          criteriaSheet.appendRow(['CriterionID', 'CriterionTitle', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'ThresholdType', 'RequiredCount', 'CheckboxID', 'CheckboxLabel', 'EvidenceFocus', 'IsMissingDistinctOverride']);
-          criteriaSheet.getRange(1, 1, 1, 13).setFontWeight('bold');
-          criteriaSheet.hideSheet();
-
-          var sheet1 = newRubricSS.getSheetByName("Sheet1");
-          if (sheet1) newRubricSS.deleteSheet(sheet1);
-
-          var newRubricFile = DriveApp.getFileById(newRubricSS.getId());
-          newRubricFile.moveTo(sharedRubricsFolder);
-          rubricFileId = newRubricFile.getId();
-        } else {
-          return { success: false, message: 'Failed to create new rubric file: Shared Rubrics folder not found.' };
-        }
-      } else {
-        return { success: false, message: 'Failed to create new rubric file: Root library folder not found.' };
-      }
-    } catch(e) {
-      return { success: false, message: 'Failed to create new rubric file: ' + e.message };
+  if (rubricSelection === "__UPLOAD__") {
+    var createdRubric = apiCreateRubricFromDocument(
+      newRubricName,
+      rubricDocument
+    );
+    if (!createdRubric.success) {
+      return createdRubric; // Fail early if parsing/upload fails
     }
-  } else if (rubricSelection && rubricSelection !== "__NEW__") {
+    rubricFileId = createdRubric.rubricFileId;
+  } else if (rubricSelection && rubricSelection !== "__UPLOAD__") {
     rubricFileId = rubricSelection;
   }
 
@@ -2631,6 +2611,196 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
     };
   } catch (err) {
     return { success: false, message: 'Failed to setup task tab: ' + err.message };
+  }
+}
+
+function apiCreateRubricFromDocument(newRubricName, rubricDocument) {
+  if (!newRubricName || !String(newRubricName).trim()) {
+    return { success: false, message: 'A rubric name is required.' };
+  }
+
+  if (!rubricDocument || !rubricDocument.base64 || !rubricDocument.mimeType) {
+    return { success: false, message: 'A PDF or Markdown rubric document is required.' };
+  }
+
+  var mimeType = String(rubricDocument.mimeType).toLowerCase();
+  var allowedMimeTypes = [
+    'application/pdf',
+    'text/markdown',
+    'text/plain'
+  ];
+
+  if (allowedMimeTypes.indexOf(mimeType) === -1) {
+    return {
+      success: false,
+      message: 'Only PDF, Markdown, and text rubric documents are supported.'
+    };
+  }
+
+  var EXTRACTION_PROMPT =
+    "You are converting a school assessment rubric into structured data.\n" +
+    "Return ONLY valid JSON. Do not include Markdown fences or explanation.\n\n" +
+    "Return this exact shape:\n" +
+    "{\n" +
+    "  \"criteria\": [\n" +
+    "    {\n" +
+    "      \"criterion\": \"Human-readable criterion title\",\n" +
+    "      \"part\": \"Optional part label or empty string\",\n" +
+    "      \"section\": \"Optional section label or empty string\",\n" +
+    "      \"maxMarks\": 10,\n" +
+    "      \"outcome\": \"Optional outcome code or empty string\",\n" +
+    "      \"bands\": {\n" +
+    "        \"A\": [\"observable statement 1\"],\n" +
+    "        \"B\": [\"observable statement 1\"],\n" +
+    "        \"C\": [\"observable statement 1\"],\n" +
+    "        \"D\": [\"observable statement 1\"],\n" +
+    "        \"E\": [\"observable statement 1\"]\n" +
+    "      }\n" +
+    "    }\n" +
+    "  ]\n" +
+    "}\n\n" +
+    "Rules:\n" +
+    "- Extract every criterion and every observable statement actually present.\n" +
+    "- Preserve the source wording as closely as possible.\n" +
+    "- Use A, B, C, D, E only when those bands occur in the source.\n" +
+    "- Use [] for an absent band.\n" +
+    "- maxMarks must be numeric; use 0 only if the source gives no mark value.\n" +
+    "- Do not invent outcomes, marks, criteria, descriptors, or observables.\n" +
+    "- Do not merge distinct observable statements.";
+
+  var geminiResponse = GeminiService.callGeminiWithFallback([
+    {
+      role: 'user',
+      parts: [
+        { text: EXTRACTION_PROMPT },
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: rubricDocument.base64
+          }
+        }
+      ]
+    }
+  ], true);
+
+  if (!geminiResponse.success) {
+    return { success: false, message: 'Gemini extraction failed: ' + geminiResponse.message };
+  }
+
+  var parsed;
+  try {
+    parsed = JSON.parse(geminiResponse.text);
+  } catch(e) {
+    return { success: false, message: 'Invalid JSON returned from Gemini.' };
+  }
+
+  // Validate parsed JSON before creating a spreadsheet
+  if (!parsed.criteria || !Array.isArray(parsed.criteria) || parsed.criteria.length === 0) {
+    return { success: false, message: 'Validation failed: parsed.criteria must be a non-empty array.' };
+  }
+
+  var rowsToWrite = [];
+  var hasAValidCriterion = false;
+
+  for (var i = 0; i < parsed.criteria.length; i++) {
+    var c = parsed.criteria[i];
+    if (!c.criterion || typeof c.criterion !== 'string' || !c.criterion.trim()) {
+      return { success: false, message: 'Validation failed: Each criterion needs a non-empty criterion string.' };
+    }
+    if (!c.bands || typeof c.bands !== 'object') {
+      return { success: false, message: 'Validation failed: Each criterion needs a bands object.' };
+    }
+
+    var keys = Object.keys(c.bands);
+    for (var k = 0; k < keys.length; k++) {
+      var bandName = keys[k];
+      var statements = c.bands[bandName];
+
+      if (!Array.isArray(statements)) {
+         return { success: false, message: 'Validation failed: Each present band value must be an array.' };
+      }
+
+      for (var s = 0; s < statements.length; s++) {
+        var stmt = statements[s];
+        if (!stmt || typeof stmt !== 'string' || !stmt.trim()) {
+           return { success: false, message: 'Validation failed: Each present band value must be an array of non-empty strings.' };
+        }
+
+        hasAValidCriterion = true;
+        rowsToWrite.push([
+          c.criterion,
+          c.part || '',
+          c.section || '',
+          c.maxMarks || 0,
+          c.outcome || '',
+          bandName,
+          stmt
+        ]);
+      }
+    }
+  }
+
+  if (!hasAValidCriterion) {
+     return { success: false, message: 'Validation failed: No valid criteria/bands found in extraction.' };
+  }
+
+  // Schema validated. Proceed to create Drive file.
+  try {
+    RubricsLibrary.ensureRubricsLibraryStructure();
+
+    var root = DriveApp.getRootFolder();
+    var libFolders = root.getFoldersByName(RubricsLibrary.ROOT_FOLDER_NAME || 'Graded Assessments');
+    if (!libFolders.hasNext()) return { success: false, message: 'Root library folder not found.' };
+    var libFolder = libFolders.next();
+
+    var sharedFolders = libFolder.getFoldersByName('Shared Rubrics');
+    if (!sharedFolders.hasNext()) return { success: false, message: 'Shared Rubrics folder not found.' };
+    var sharedRubricsFolder = sharedFolders.next();
+
+    var cleanName = String(newRubricName).trim();
+    var newRubricSS = SpreadsheetApp.create(cleanName);
+    var newRubricFileId = newRubricSS.getId();
+
+    var rubricSheet = newRubricSS.insertSheet('Rubric');
+    rubricSheet.appendRow(['Criterion', 'Part', 'Section', 'MaxMarks', 'Outcome', 'Band', 'Description']);
+
+    if (rowsToWrite.length > 0) {
+      rubricSheet.getRange(2, 1, rowsToWrite.length, rowsToWrite[0].length).setValues(rowsToWrite);
+    }
+    rubricSheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+
+    var criteriaSheet = newRubricSS.insertSheet('Criteria');
+    criteriaSheet.appendRow([
+      'CriterionID', 'CriterionTitle', 'Part', 'Section', 'MaxMarks', 'Outcome',
+      'Band', 'ThresholdType', 'RequiredCount', 'CheckboxID', 'CheckboxLabel',
+      'EvidenceFocus', 'IsMissingDistinctOverride'
+    ]);
+    criteriaSheet.getRange(1, 1, 1, 13).setFontWeight('bold');
+
+    newRubricSS.setActiveSheet(rubricSheet);
+    criteriaSheet.hideSheet();
+
+    var sheet1 = newRubricSS.getSheetByName('Sheet1');
+    if (sheet1) newRubricSS.deleteSheet(sheet1);
+
+    var newRubricFile = DriveApp.getFileById(newRubricFileId);
+    newRubricFile.moveTo(sharedRubricsFolder);
+
+    var regenResult = apiRegenerateRubricSchema(newRubricFileId);
+    if (!regenResult.success) {
+      newRubricFile.setTrashed(true);
+      return { success: false, message: 'Schema generation failed during creation: ' + regenResult.message };
+    }
+
+    return {
+      success: true,
+      rubricFileId: newRubricFileId,
+      rubricName: cleanName,
+      message: 'Created rubric from uploaded document: ' + cleanName
+    };
+
+  } catch(e) {
+     return { success: false, message: 'File creation failed: ' + e.message };
   }
 }
 
