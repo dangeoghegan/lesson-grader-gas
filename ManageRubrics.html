@@ -29,7 +29,12 @@
         font-weight: 500;
         font-size: 14px;
       }
-      .btn-open {
+      .btn-group {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .btn-action {
         background-color: #f1f3f4;
         color: #1a73e8;
         border: 1px solid #dadce0;
@@ -40,9 +45,19 @@
         font-weight: 500;
         cursor: pointer;
       }
-      .btn-open:hover {
+      .btn-action:hover {
         background-color: #e8f0fe;
       }
+      .btn-action:disabled {
+        color: #999;
+        cursor: not-allowed;
+      }
+      .sync-status {
+        font-size: 12px;
+        margin-left: 5px;
+      }
+      .sync-success { color: #137333; }
+      .sync-error { color: #c5221f; }
       #status {
         margin-top: 15px;
         font-size: 13px;
@@ -77,14 +92,29 @@
               nameSpan.className = 'rubric-name';
               nameSpan.textContent = r.name;
 
+              const btnGroup = document.createElement('div');
+              btnGroup.className = 'btn-group';
+
+              const syncBtn = document.createElement('button');
+              syncBtn.className = 'btn-action';
+              syncBtn.textContent = 'Sync to Grading Engine';
+              syncBtn.onclick = function() { syncRubric(r.id, syncBtn, statusSpan); };
+
               const openLink = document.createElement('a');
-              openLink.className = 'btn-open';
+              openLink.className = 'btn-action';
               openLink.textContent = 'Open in Drive';
               openLink.href = 'https://docs.google.com/spreadsheets/d/' + r.id + '/edit';
               openLink.target = '_blank';
 
+              const statusSpan = document.createElement('span');
+              statusSpan.className = 'sync-status';
+
+              btnGroup.appendChild(syncBtn);
+              btnGroup.appendChild(openLink);
+              btnGroup.appendChild(statusSpan);
+
               li.appendChild(nameSpan);
-              li.appendChild(openLink);
+              li.appendChild(btnGroup);
               list.appendChild(li);
             });
           })
@@ -94,6 +124,33 @@
           })
           .apiListSharedRubrics();
       };
+
+      function syncRubric(rubricId, btnElement, statusElement) {
+        btnElement.disabled = true;
+        btnElement.textContent = 'Syncing...';
+        statusElement.textContent = '';
+        statusElement.className = 'sync-status';
+
+        google.script.run
+          .withSuccessHandler(function(res) {
+            btnElement.disabled = false;
+            btnElement.textContent = 'Sync to Grading Engine';
+            if (res.success) {
+              statusElement.textContent = '✓ ' + res.message;
+              statusElement.className = 'sync-status sync-success';
+            } else {
+              statusElement.textContent = '✗ ' + res.message;
+              statusElement.className = 'sync-status sync-error';
+            }
+          })
+          .withFailureHandler(function(err) {
+            btnElement.disabled = false;
+            btnElement.textContent = 'Sync to Grading Engine';
+            statusElement.textContent = '✗ ' + err.message;
+            statusElement.className = 'sync-status sync-error';
+          })
+          .apiRegenerateRubricSchema(rubricId);
+      }
     </script>
   </body>
 </html>
