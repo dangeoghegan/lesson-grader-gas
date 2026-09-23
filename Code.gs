@@ -850,21 +850,22 @@ var RubricsLibrary = (function() {
     };
   }
 
-  function ensureGradingWorkbook(stage, courseCode, categoryName, year) {
+  function ensureGradingWorkbook(stage, courseCode, categoryName, year, taskName) {
     var folderResult = ensureCourseCategoryFolderPath(stage, courseCode, categoryName, year);
     if (!folderResult.success) {
       return folderResult;
     }
 
     var categoryFolder = DriveApp.getFolderById(folderResult.categoryFolder.id);
-    var files = categoryFolder.getFilesByName("Grading Workbook");
+    var workbookName = courseCode + ' [' + year + '] - ' + taskName + ' - Grading';
+    var files = categoryFolder.getFilesByName(workbookName);
 
     if (files.hasNext()) {
       var existingFile = files.next();
       return { success: true, workbook: { id: existingFile.getId(), name: existingFile.getName() }, message: 'Found existing Grading Workbook.' };
     }
 
-    var ss = SpreadsheetApp.create("Grading Workbook");
+    var ss = SpreadsheetApp.create(workbookName);
     var newFile = DriveApp.getFileById(ss.getId());
     newFile.moveTo(categoryFolder);
 
@@ -2508,19 +2509,19 @@ function apiGetGradingSetupData() {
   return { courses: courses, categories: categories, tasks: tasks, sharedRubrics: sharedRubrics };
 }
 
-function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName) {
-  // 1. Validate courseCode starts with correct prefix for stage
-  var isValidPrefix = false;
-  if (stage === 'Stage 4') {
-    isValidPrefix = courseCode.startsWith('7') || courseCode.startsWith('8');
-  } else if (stage === 'Stage 5') {
-    isValidPrefix = courseCode.startsWith('9') || courseCode.startsWith('10');
-  } else if (stage === 'Stage 6') {
-    isValidPrefix = courseCode.startsWith('11') || courseCode.startsWith('12');
-  }
+function deriveStageFromCourseCode(courseCode) {
+  if (!courseCode) return null;
+  if (courseCode.startsWith('7') || courseCode.startsWith('8')) return 'Stage 4';
+  if (courseCode.startsWith('9') || courseCode.startsWith('10')) return 'Stage 5';
+  if (courseCode.startsWith('11') || courseCode.startsWith('12')) return 'Stage 6';
+  return null;
+}
 
-  if (!isValidPrefix) {
-    return { success: false, message: 'Invalid Course Code. Stage 4 must start with 7/8, Stage 5 with 9/10, Stage 6 with 11/12.' };
+function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName) {
+  // 1. Derive stage from course code dynamically
+  var derivedStage = deriveStageFromCourseCode(courseCode);
+  if (!derivedStage) {
+    return { success: false, message: 'Invalid Course Code. Must start with 7, 8, 9, 10, 11, or 12.' };
   }
 
   // 2. Handle Rubric (Create new or use existing)
@@ -2566,7 +2567,7 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
   }
 
   // 3. Call ensureGradingWorkbook
-  var result = RubricsLibrary.ensureGradingWorkbook(stage, courseCode, categoryName, year);
+  var result = RubricsLibrary.ensureGradingWorkbook(derivedStage, courseCode, categoryName, year, taskName);
   if (!result.success) {
     return result; // Bubble up error
   }
