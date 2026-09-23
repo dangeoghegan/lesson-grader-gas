@@ -2065,12 +2065,13 @@ var GeminiService = (function() {
   }
 
   return {
-    setGeminiApiKey: setGeminiApiKey,
-    testGeminiConnection: testGeminiConnection,
-    runInitialAiAssessment: runInitialAiAssessment,
-    runAiAssessmentWithPreparedFiles: runAiAssessmentWithPreparedFiles,
-    generateTeacherReviewedFeedback: generateTeacherReviewedFeedback
-  };
+  setGeminiApiKey: setGeminiApiKey,
+  testGeminiConnection: testGeminiConnection,
+  callGeminiWithFallback: callGeminiWithFallback,
+  runInitialAiAssessment: runInitialAiAssessment,
+  runAiAssessmentWithPreparedFiles: runAiAssessmentWithPreparedFiles,
+  generateTeacherReviewedFeedback: generateTeacherReviewedFeedback
+};
 })();
 
 /* ============================================================================
