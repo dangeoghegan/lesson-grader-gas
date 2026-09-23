@@ -102,6 +102,21 @@
     var passedCourseCode = "<?= typeof passedCourseCode !== 'undefined' ? passedCourseCode : '' ?>";
     var passedTaskName = "<?= typeof passedTaskName !== 'undefined' ? passedTaskName : '' ?>";
 
+    function isUnevaluatedTemplateValue(value) {
+      var text = String(value || '');
+      return text.indexOf('<?') !== -1 ||
+        text.indexOf('<?=') !== -1 ||
+        text.indexOf('?>') !== -1;
+    }
+
+    if (isUnevaluatedTemplateValue(passedCourseCode)) {
+      passedCourseCode = '';
+    }
+
+    if (isUnevaluatedTemplateValue(passedTaskName)) {
+      passedTaskName = '';
+    }
+
     window.onload = function() {
       if (passedTaskName) {
         document.querySelector('h2').innerText = "Link Classroom to Task: " + passedTaskName;
@@ -165,28 +180,47 @@
             return;
           }
           var cwList = res.coursework || [];
+
           aSelect.innerHTML = '<option value="">-- Choose an assignment --</option>';
           assignmentsMap = {};
 
-          // Filter coursework: ONLY show assignments that HAVE a due date.
-          var filteredCwList = cwList.filter(function(cw) {
-            return cw.dueDate && Object.keys(cw.dueDate).length > 0 && cw.dueDate !== 'No due date set';
-          });
-
-          if (!filteredCwList.length) {
-            aSelect.innerHTML = '<option value="">-- No valid assignments found --</option>';
-            showStatus('No published assignments with a Due Date found in this course.', 'error');
+          if (!cwList.length) {
+            aSelect.innerHTML =
+              '<option value="">-- No coursework found in this Classroom course --</option>';
+            showStatus(
+              'No coursework was returned for this Classroom course.',
+              'error'
+            );
             return;
           }
-          filteredCwList.forEach(function(cw) {
+
+          cwList.forEach(function(cw) {
             assignmentsMap[cw.id] = cw;
-            var opt = document.createElement('option');
-            opt.value = cw.id;
-            opt.textContent = cw.title + ' (Max: ' + cw.maxPoints + ' pts)';
-            aSelect.appendChild(opt);
+
+            var dueLabel = cw.dueDate
+              ? 'Due: ' + cw.dueDate
+              : 'No due date — manual import only';
+
+            var stateLabel = cw.state
+              ? ' | ' + cw.state
+              : '';
+
+            var option = document.createElement('option');
+            option.value = cw.id;
+            option.textContent =
+              (cw.title || '(Untitled assignment)') +
+              ' (' + (cw.maxPoints || 0) + ' pts' +
+              ' | ' + dueLabel +
+              stateLabel + ')';
+
+            aSelect.appendChild(option);
           });
+
+          showStatus(
+            cwList.length + ' Classroom coursework item(s) available.',
+            'success'
+          );
           aSelect.disabled = false;
-          showStatus('', '');
         })
         .withFailureHandler(function(err) {
           showStatus('Error loading coursework: ' + err.message, 'error');

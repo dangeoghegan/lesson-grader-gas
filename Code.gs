@@ -2295,11 +2295,18 @@ function openClassAiGradingRunner() {
 
 function openClassroomPicker() {
   var template = HtmlService.createTemplateFromFile('CourseworkPicker');
+  template.passedCourseCode = '';
+  template.passedTaskName = '';
+
   var html = template.evaluate()
     .setWidth(620)
     .setHeight(480)
     .setTitle('Select Classroom Course and Assignment');
-  SpreadsheetApp.getUi().showModalDialog(html, 'Select Classroom Course and Assignment');
+
+  SpreadsheetApp.getUi().showModalDialog(
+    html,
+    'Select Classroom Course and Assignment'
+  );
 }
 
 function openClassroomPickerForTask(courseCode, taskName) {
