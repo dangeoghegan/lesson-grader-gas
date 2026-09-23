@@ -674,6 +674,7 @@ var RubricsLibrary = (function() {
     var root = DriveApp.getRootFolder();
     var libraryFolder = getOrCreateFolder(root, ROOT_FOLDER_NAME);
     var settingsFolder = getOrCreateFolder(libraryFolder, "Settings");
+    getOrCreateFolder(libraryFolder, "Shared Rubrics");
     getOrCreateFolder(libraryFolder, "Stage 4");
     getOrCreateFolder(libraryFolder, "Stage 5");
     getOrCreateFolder(libraryFolder, "Stage 6");
@@ -695,7 +696,7 @@ var RubricsLibrary = (function() {
     var schemas = [
       { name: "Courses", headers: ["Stage", "CourseCode", "Year", "Active"] },
       { name: "Categories", headers: ["CourseCode", "CategoryName"] },
-      { name: "Tasks", headers: ["CourseCode", "CategoryName", "TaskName"] }
+      { name: "Tasks", headers: ["CourseCode", "CategoryName", "TaskName", "RubricFileId"] }
     ];
 
     for (var i = 0; i < schemas.length; i++) {
@@ -753,17 +754,18 @@ var RubricsLibrary = (function() {
     return true;
   }
 
-  function addTaskToIndex(courseCode, categoryName, taskName) {
+  function addTaskToIndex(courseCode, categoryName, taskName, rubricFileId) {
     var ss = getIndexSpreadsheet();
     if (!ss) return false;
     var sheet = ss.getSheetByName("Tasks");
     var data = sheet.getDataRange().getValues();
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][0]) === String(courseCode) && String(data[r][1]) === String(categoryName) && String(data[r][2]) === String(taskName)) {
+        // Task already exists, do not modify RubricFileId. Returns false (no new row created).
         return false;
       }
     }
-    sheet.appendRow([courseCode, categoryName, taskName]);
+    sheet.appendRow([courseCode, categoryName, taskName, rubricFileId || ""]);
     return true;
   }
 
@@ -804,7 +806,16 @@ var RubricsLibrary = (function() {
     var results = [];
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][0]) === String(courseCode) && String(data[r][1]) === String(categoryName)) {
-        results.push({ courseCode: data[r][0], categoryName: data[r][1], taskName: data[r][2] });
+        var rId = data[r][3] || "";
+        var rName = "";
+        if (rId) {
+          try {
+            rName = DriveApp.getFileById(rId).getName();
+          } catch(e) {
+            rName = "Unknown/Inaccessible File";
+          }
+        }
+        results.push({ courseCode: data[r][0], categoryName: data[r][1], taskName: data[r][2], rubricFileId: rId, rubricName: rName });
       }
     }
     return results;
@@ -2022,6 +2033,7 @@ function onOpen() {
     .addItem('Open Assessment Studio (Fullscreen)', 'openAssessmentStudio')
     .addItem('Run Class AI Grading (All Students)', 'openClassAiGradingRunner')
     .addItem('Setup New Grading Workbook', 'openGradingWorkbookSetupUi')
+    .addItem('Manage Shared Rubrics', 'openManageRubricsUi')
     .addItem('Setup / Migrate Assessment System', 'setupOrMigrateAssessmentSystemUi')
     .addItem('Refresh Marking Sheet', 'refreshMarkingSheetUi')
     .addSeparator()
@@ -2059,6 +2071,15 @@ function openGradingWorkbookSetupUi() {
     .setHeight(500)
     .setTitle('Setup Grading Workbook');
   SpreadsheetApp.getUi().showModalDialog(html, 'Setup Grading Workbook');
+}
+
+function openManageRubricsUi() {
+  var template = HtmlService.createTemplateFromFile('ManageRubrics');
+  var html = template.evaluate()
+    .setWidth(500)
+    .setHeight(400)
+    .setTitle('Manage Shared Rubrics');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Manage Shared Rubrics');
 }
 
 function openClassAiGradingRunner() {
@@ -2186,11 +2207,33 @@ function repairAssessmentSystemAndImport() {
 }
 
 /* --- Client-Callable RPC Endpoints (google.script.run) --- */
+function apiListSharedRubrics() {
+  var sharedRubrics = [];
+  try {
+    var root = DriveApp.getRootFolder();
+    var libFolders = root.getFoldersByName('Graded Assessments');
+    if (libFolders.hasNext()) {
+      var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
+      if (sharedFolders.hasNext()) {
+        var files = sharedFolders.next().getFilesByType(MimeType.GOOGLE_SHEETS);
+        while (files.hasNext()) {
+          var f = files.next();
+          sharedRubrics.push({ id: f.getId(), name: f.getName() });
+        }
+      }
+    }
+  } catch(e) {
+    Logger.log("Error fetching shared rubrics: " + e);
+  }
+  return sharedRubrics;
+}
+
 function apiGetGradingSetupData() {
   var stages = ['Stage 4', 'Stage 5', 'Stage 6'];
   var courses = [];
   var categories = [];
   var tasks = [];
+  var sharedRubrics = [];
 
   for (var i = 0; i < stages.length; i++) {
     var stageCourses = RubricsLibrary.getActiveCourses(stages[i]);
@@ -2210,10 +2253,27 @@ function apiGetGradingSetupData() {
     }
   }
 
-  return { courses: courses, categories: categories, tasks: tasks };
+  try {
+    var root = DriveApp.getRootFolder();
+    var libFolders = root.getFoldersByName('Graded Assessments');
+    if (libFolders.hasNext()) {
+      var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
+      if (sharedFolders.hasNext()) {
+        var files = sharedFolders.next().getFilesByType(MimeType.GOOGLE_SHEETS);
+        while (files.hasNext()) {
+          var f = files.next();
+          sharedRubrics.push({ id: f.getId(), name: f.getName() });
+        }
+      }
+    }
+  } catch(e) {
+    Logger.log("Error fetching shared rubrics: " + e);
+  }
+
+  return { courses: courses, categories: categories, tasks: tasks, sharedRubrics: sharedRubrics };
 }
 
-function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year) {
+function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName) {
   // 1. Validate courseCode starts with correct prefix for stage
   var isValidPrefix = false;
   if (stage === 'Stage 4') {
@@ -2228,13 +2288,40 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
     return { success: false, message: 'Invalid Course Code. Stage 4 must start with 7/8, Stage 5 with 9/10, Stage 6 with 11/12.' };
   }
 
-  // 2. Call ensureGradingWorkbook
+  // 2. Handle Rubric (Create new or use existing)
+  var rubricFileId = "";
+  if (rubricSelection === "__NEW__" && newRubricName) {
+    try {
+      var root = DriveApp.getRootFolder();
+      var libFolders = root.getFoldersByName('Graded Assessments');
+      if (libFolders.hasNext()) {
+        var sharedFolders = libFolders.next().getFoldersByName('Shared Rubrics');
+        if (sharedFolders.hasNext()) {
+          var sharedRubricsFolder = sharedFolders.next();
+          var newRubricSS = SpreadsheetApp.create(newRubricName);
+          var newRubricFile = DriveApp.getFileById(newRubricSS.getId());
+          newRubricFile.moveTo(sharedRubricsFolder);
+          rubricFileId = newRubricFile.getId();
+        } else {
+          return { success: false, message: 'Failed to create new rubric file: Shared Rubrics folder not found.' };
+        }
+      } else {
+        return { success: false, message: 'Failed to create new rubric file: Graded Assessments folder not found.' };
+      }
+    } catch(e) {
+      return { success: false, message: 'Failed to create new rubric file: ' + e.message };
+    }
+  } else if (rubricSelection && rubricSelection !== "__NEW__") {
+    rubricFileId = rubricSelection;
+  }
+
+  // 3. Call ensureGradingWorkbook
   var result = RubricsLibrary.ensureGradingWorkbook(stage, courseCode, categoryName, year);
   if (!result.success) {
     return result; // Bubble up error
   }
 
-  // 3. Open workbook and ensure task sheet exists
+  // 4. Open workbook and ensure task sheet exists
   try {
     var ss = SpreadsheetApp.openById(result.workbook.id);
     var sheet = ss.getSheetByName(taskName);
@@ -2248,8 +2335,8 @@ function apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName
       ss.deleteSheet(sheet1);
     }
 
-    // 4. Add task to index
-    RubricsLibrary.addTaskToIndex(courseCode, categoryName, taskName);
+    // 5. Add task to index
+    RubricsLibrary.addTaskToIndex(courseCode, categoryName, taskName, rubricFileId);
 
     return {
       success: true,

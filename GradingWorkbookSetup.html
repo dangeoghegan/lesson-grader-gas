@@ -111,6 +111,15 @@
     </div>
 
     <div class="form-group">
+      <label for="rubric">Rubric Selection</label>
+      <select id="rubricSelect" onchange="handleRubricSelect()">
+        <option value="">-- No Rubric --</option>
+        <option value="__NEW__">+ Create New Blank Rubric</option>
+      </select>
+      <input type="text" id="newRubricInput" placeholder="New Rubric Name" style="display:none; margin-top:8px;">
+    </div>
+
+    <div class="form-group">
       <label for="year">Year</label>
       <input type="number" id="year" onchange="updateCourseDropdown()" required>
     </div>
@@ -120,7 +129,7 @@
     <div id="status"></div>
 
     <script>
-      let backendData = { courses: [], categories: [], tasks: [] };
+      let backendData = { courses: [], categories: [], tasks: [], sharedRubrics: [] };
 
       window.onload = function() {
         document.getElementById('year').value = new Date().getFullYear();
@@ -133,10 +142,33 @@
             document.getElementById('submitBtn').disabled = false;
             document.getElementById('submitBtn').innerText = 'Create / Open Workbook';
             updateCourseDropdown();
+            populateRubricDropdown();
           })
           .withFailureHandler(showError)
           .apiGetGradingSetupData();
       };
+
+      function populateRubricDropdown() {
+        const select = document.getElementById('rubricSelect');
+        // keep the first two default options, append the rest
+        backendData.sharedRubrics.forEach(r => {
+          const opt = document.createElement('option');
+          opt.value = r.id;
+          opt.textContent = r.name;
+          select.appendChild(opt);
+        });
+      }
+
+      function handleRubricSelect() {
+        const select = document.getElementById('rubricSelect');
+        const input = document.getElementById('newRubricInput');
+        if (select.value === '__NEW__') {
+          input.style.display = 'block';
+        } else {
+          input.style.display = 'none';
+          input.value = '';
+        }
+      }
 
       function updateCourseDropdown() {
         const stage = document.getElementById('stage').value;
@@ -221,9 +253,16 @@
         const categoryName = 'General';
         const taskName = document.getElementById('taskInput').value.trim();
         const year = document.getElementById('year').value;
+        const rubricSelection = document.getElementById('rubricSelect').value;
+        const newRubricName = document.getElementById('newRubricInput').value.trim();
 
         if (!courseCode || !taskName || !year) {
-          showStatus("Please fill in all fields.", true);
+          showStatus("Please fill in all course/task fields.", true);
+          return;
+        }
+
+        if (rubricSelection === '__NEW__' && !newRubricName) {
+          showStatus("Please enter a name for the new rubric.", true);
           return;
         }
 
@@ -242,7 +281,7 @@
             }
           })
           .withFailureHandler(showError)
-          .apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year);
+          .apiSubmitGradingWorkbookSetup(stage, courseCode, categoryName, taskName, year, rubricSelection, newRubricName);
       }
     </script>
   </body>
