@@ -246,11 +246,30 @@ var category = internalCategory_();
       return fail_('Upload a rubric document and enter its name.');
     }
     try {
-      return apiSubmitGradingWorkbookSetup(code, category, task, yr,
+      var result = apiSubmitGradingWorkbookSetup(code, category, task, yr,
         rubricId || '', rubricName || '', document || null);
+
+      if (!result || result.success !== true) {
+        return result || fail_('Workbook setup returned no result.');
+      }
+
+      var workbookId = result.workbook && result.workbook.id;
+      if (!validId_(workbookId)) {
+        console.error('Workbook setup succeeded without a valid workbook ID: ' + JSON.stringify(result));
+        return fail_('Workbook was created, but setup did not return a valid workbook ID.');
+      }
+
+      initialiseWorkbook_(workbookId);
+      var ss = open_(workbookId);
+
+      if (taskNames_(ss).indexOf(task) === -1) {
+        throw new Error('Expected task tab is missing: ' + task);
+      }
+
+      return result;
     } catch (err) {
-      console.error('Web create workbook: ' + err);
-      return fail_('Workbook setup failed. Check Apps Script executions.');
+      console.error('Web create workbook ' + (typeof workbookId !== 'undefined' ? workbookId : '') + ': ' + err.stack);
+      return fail_('Workbook setup failed: ' + err.message);
     }
   }
   function link_(id, taskName, courseId, workId) {
