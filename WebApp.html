@@ -284,7 +284,7 @@ $('year').value = String(new Date().getFullYear());
             if (item.dueDate) {
               button.textContent = String(item.title || '(Untitled assignment)') + ' — Due ' + item.dueDate;
             } else {
-              button.textContent = String(item.title || '(Untitled assignment)') + ' — No due date; manual import only';
+              button.textContent = String(item.title || '(Untitled assignment)') + ' — No due date; manual import not verified';
             }
             button.addEventListener('click', function () { linkCoursework(courseId, item.id, item.title || 'Untitled assignment', button); });
             root.appendChild(button);
