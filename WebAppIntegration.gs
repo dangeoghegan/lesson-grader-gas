@@ -326,7 +326,7 @@ var category = internalCategory_();
       sheet.appendRow(row);
       var msg = due
         ? 'Linked “' + (cw.title || 'Untitled assignment') + '” to “' + task + '”. Hourly auto-import trigger must be configured separately.'
-        : 'Linked “' + (cw.title || 'Untitled assignment') + '” to “' + task + '” for manual import only (no due date).';
+        : 'Assignment linked; automatic due-date import is unavailable. Manual import has not been verified.';
       return { success: true, message: msg };
     } catch (err) {
       console.error('Web Classroom link: ' + err);
