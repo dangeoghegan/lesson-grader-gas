@@ -280,13 +280,12 @@ $('year').value = String(new Date().getFullYear());
           var res = resultOrThrow(await call('apiListCourseWork', [courseId])); root.replaceChildren();
           if (!(res.coursework || []).length) { root.textContent = 'No coursework found.'; return; }
           (res.coursework || []).forEach(function (item) {
-            if (!item.dueDate) {
-              var note = document.createElement('p');
-              note.textContent = String(item.title || '(Untitled assignment)') + ' — No due date; cannot link for scheduled import.';
-              root.appendChild(note); return;
-            }
             var button = document.createElement('button'); button.type = 'button'; button.className = 'item';
-            button.textContent = String(item.title || '(Untitled assignment)') + ' — Due ' + item.dueDate;
+            if (item.dueDate) {
+              button.textContent = String(item.title || '(Untitled assignment)') + ' — Due ' + item.dueDate;
+            } else {
+              button.textContent = String(item.title || '(Untitled assignment)') + ' — No due date; manual import only';
+            }
             button.addEventListener('click', function () { linkCoursework(courseId, item.id, item.title || 'Untitled assignment', button); });
             root.appendChild(button);
           });

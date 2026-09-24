@@ -283,15 +283,21 @@ var category = internalCategory_();
       if (taskNames_(ss).indexOf(task) === -1) return fail_('Choose a task tab in the selected workbook.');
       var course = Classroom.Courses.get(String(courseId));
       var cw = Classroom.Courses.CourseWork.get(String(courseId), String(workId));
-      if (!cw || !cw.dueDate || !cw.dueDate.year || !cw.dueDate.month || !cw.dueDate.day) {
-        return fail_('A due date is required for scheduled import.');
-      }
+      if (!cw) return fail_('Assignment not found.');
       if (cw.courseId && String(cw.courseId) !== String(courseId)) return fail_('Assignment does not belong to the selected course.');
-      var time = cw.dueTime || {};
-      var due = new Date(Date.UTC(cw.dueDate.year, cw.dueDate.month - 1, cw.dueDate.day,
-        time.hours === undefined ? 23 : time.hours,
-        time.minutes === undefined ? 59 : time.minutes));
-      if (isNaN(due.getTime())) return fail_('Invalid Classroom due date.');
+      var due = null;
+      if (cw.dueDate) {
+        if (!cw.dueDate.year || !cw.dueDate.month || !cw.dueDate.day) {
+          return fail_('Assignment has an invalid due date.');
+        }
+        var time = cw.dueTime || {};
+        due = new Date(Date.UTC(
+          cw.dueDate.year, cw.dueDate.month - 1, cw.dueDate.day,
+          time.hours === undefined ? 23 : time.hours,
+          time.minutes === undefined ? 59 : time.minutes
+        ));
+        if (isNaN(due.getTime())) return fail_('Invalid Classroom due date.');
+      }
       var sheet = ss.getSheetByName(Config.SHEET_CLASSROOM_CONFIG);
       if (!header_(sheet, CONFIG_HEADERS)) return fail_('Workbook ClassroomConfig schema is incomplete.');
       lock.waitLock(10000);
@@ -315,10 +321,13 @@ var category = internalCategory_();
       row[columns.SavedBy] = Session.getEffectiveUser().getEmail() || '';
       row[columns.Active] = true;
       row[columns.TaskName] = task;
-      row[columns.DueDate] = due.toISOString();
+      row[columns.DueDate] = due ? due.toISOString() : '';
       row[columns.AutoImported] = false;
       sheet.appendRow(row);
-      return { success: true, message: 'Linked “' + (cw.title || 'Untitled assignment') + '” to “' + task + '”. Hourly auto-import trigger must be configured separately.' };
+      var msg = due
+        ? 'Linked “' + (cw.title || 'Untitled assignment') + '” to “' + task + '”. Hourly auto-import trigger must be configured separately.'
+        : 'Linked “' + (cw.title || 'Untitled assignment') + '” to “' + task + '” for manual import only (no due date).';
+      return { success: true, message: msg };
     } catch (err) {
       console.error('Web Classroom link: ' + err);
       return fail_('Unable to link assignment. Check Classroom access and workbook edit permission.');
