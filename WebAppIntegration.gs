@@ -643,13 +643,15 @@ var LessonGraderWeb = (function () {
   }
 
   return {
-    list: list_,
-    metadata: metadata_,
-    rubrics: rubrics_,
-    tasks: tasks_,
-    create: create_,
-    link: link_
-  };
+  list: list_,
+  metadata: metadata_,
+  rubrics: rubrics_,
+  tasks: tasks_,
+  create: create_,
+  link: link_,
+  getTaskAssessmentOverview: getTaskAssessmentOverview_,
+  getSubmissionAssessmentDetail: getSubmissionAssessmentDetail_
+};
 })();
 
 function apiWebListCandidateWorkbooks() {
