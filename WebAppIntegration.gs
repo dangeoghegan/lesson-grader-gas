@@ -642,16 +642,561 @@ var LessonGraderWeb = (function () {
     }
   }
 
+  function getTaskAssessmentOverview_(spreadsheetId, taskName) {
+    try {
+      var ss = open_(spreadsheetId);
+      var task = String(taskName || '').trim();
+
+      if (!task || taskNames_(ss).indexOf(task) === -1) {
+        return fail_('Choose a valid visible task tab.');
+      }
+
+      var warnings = [];
+      var rubricRows = [];
+      var submissions = [];
+
+      var rubricSheet = ss.getSheetByName('Rubric');
+
+      if (rubricSheet && rubricSheet.getLastRow() > 1) {
+        var rubricValues = rubricSheet.getDataRange().getValues();
+        var rubricHeaders = rubricValues[0].map(function (header) {
+          return String(header || '').trim();
+        });
+
+        var criterionIndex = rubricHeaders.indexOf('Criterion');
+        var partIndex = rubricHeaders.indexOf('Part');
+        var sectionIndex = rubricHeaders.indexOf('Section');
+        var maxMarksIndex = rubricHeaders.indexOf('MaxMarks');
+        var outcomeIndex = rubricHeaders.indexOf('Outcome');
+        var bandIndex = rubricHeaders.indexOf('Band');
+        var descriptionIndex = rubricHeaders.indexOf('Description');
+
+        if (
+          criterionIndex === -1 ||
+          bandIndex === -1 ||
+          descriptionIndex === -1
+        ) {
+          warnings.push(
+            'The Rubric sheet does not contain the expected Criterion, Band and Description columns.'
+          );
+        } else {
+          for (var r = 1; r < rubricValues.length; r++) {
+            var row = rubricValues[r];
+            var criterion = String(row[criterionIndex] || '').trim();
+
+            if (!criterion) {
+              continue;
+            }
+
+            rubricRows.push({
+              criterion: criterion,
+              part: partIndex === -1 ? '' : row[partIndex],
+              section: sectionIndex === -1 ? '' : row[sectionIndex],
+              maxMarks: maxMarksIndex === -1 ? '' : row[maxMarksIndex],
+              outcome: outcomeIndex === -1 ? '' : row[outcomeIndex],
+              band: bandIndex === -1 ? '' : row[bandIndex],
+              description: descriptionIndex === -1 ? '' : row[descriptionIndex]
+            });
+          }
+        }
+      } else {
+        warnings.push(
+          'No human-facing Rubric sheet was found, or it does not contain rubric rows.'
+        );
+      }
+
+      var submissionsSheet = ss.getSheetByName(
+        Config.SHEET_SUBMISSIONS
+      );
+
+      if (!submissionsSheet || submissionsSheet.getLastRow() < 1) {
+        warnings.push('No Submissions sheet was found in this workbook.');
+      } else {
+        var submissionValues = submissionsSheet.getDataRange().getValues();
+        var submissionHeaders = submissionValues[0].map(function (header) {
+          return String(header || '').trim();
+        });
+
+        function submissionColumn_(name) {
+          return submissionHeaders.indexOf(name);
+        }
+
+        var idIndex = submissionColumn_('SubmissionRecordID');
+        var taskIndex = submissionColumn_('Task');
+        var taskNameIndex = submissionColumn_('TaskName');
+        var studentNameIndex = submissionColumn_('StudentName');
+        var studentEmailIndex = submissionColumn_('StudentEmail');
+        var statusIndex = submissionColumn_('Status');
+        var classroomStateIndex = submissionColumn_('ClassroomState');
+        var turnedInTimeIndex = submissionColumn_('TurnedInTime');
+        var updateTimeIndex = submissionColumn_('UpdateTime');
+        var lateIndex = submissionColumn_('Late');
+        var currentOfficialIndex = submissionColumn_('CurrentOfficial');
+        var approvedAtIndex = submissionColumn_('ApprovedAt');
+        var lockedAtIndex = submissionColumn_('LockedAt');
+        var classroomGradeIndex = submissionColumn_(
+          'ClassroomAssignedGrade'
+        );
+
+        if (idIndex === -1) {
+          warnings.push(
+            'The Submissions sheet does not contain a SubmissionRecordID column.'
+          );
+        } else {
+          for (var s = 1; s < submissionValues.length; s++) {
+            var submissionRow = submissionValues[s];
+            var rowTask = '';
+
+            if (taskIndex !== -1) {
+              rowTask = String(submissionRow[taskIndex] || '').trim();
+            } else if (taskNameIndex !== -1) {
+              rowTask = String(
+                submissionRow[taskNameIndex] || ''
+              ).trim();
+            }
+
+            if (rowTask !== task) {
+              continue;
+            }
+
+            var submissionId = String(
+              submissionRow[idIndex] || ''
+            ).trim();
+
+            if (!submissionId) {
+              continue;
+            }
+
+            submissions.push({
+              submissionRecordId: submissionId,
+              studentName:
+                studentNameIndex === -1
+                  ? ''
+                  : submissionRow[studentNameIndex],
+              studentEmail:
+                studentEmailIndex === -1
+                  ? ''
+                  : submissionRow[studentEmailIndex],
+              status:
+                statusIndex === -1
+                  ? ''
+                  : submissionRow[statusIndex],
+              classroomState:
+                classroomStateIndex === -1
+                  ? ''
+                  : submissionRow[classroomStateIndex],
+              turnedInTime:
+                turnedInTimeIndex === -1
+                  ? ''
+                  : submissionRow[turnedInTimeIndex],
+              updateTime:
+                updateTimeIndex === -1
+                  ? ''
+                  : submissionRow[updateTimeIndex],
+              late:
+                lateIndex === -1
+                  ? ''
+                  : submissionRow[lateIndex],
+              currentOfficial:
+                currentOfficialIndex === -1
+                  ? ''
+                  : submissionRow[currentOfficialIndex],
+              approvedAt:
+                approvedAtIndex === -1
+                  ? ''
+                  : submissionRow[approvedAtIndex],
+              lockedAt:
+                lockedAtIndex === -1
+                  ? ''
+                  : submissionRow[lockedAtIndex],
+              currentMark:
+                classroomGradeIndex === -1
+                  ? ''
+                  : submissionRow[classroomGradeIndex]
+            });
+          }
+        }
+      }
+
+      submissions.sort(function (a, b) {
+        var aName = String(a.studentName || '').toLowerCase();
+        var bName = String(b.studentName || '').toLowerCase();
+
+        if (aName < bName) {
+          return -1;
+        }
+
+        if (aName > bName) {
+          return 1;
+        }
+
+        return String(b.updateTime || '').localeCompare(
+          String(a.updateTime || '')
+        );
+      });
+
+      return {
+        success: true,
+        data: {
+          workbook: {
+            id: spreadsheetId,
+            name: ss.getName()
+          },
+          taskName: task,
+          rubric: {
+            available: rubricRows.length > 0,
+            rows: rubricRows
+          },
+          submissions: submissions,
+          warnings: warnings
+        }
+      };
+    } catch (err) {
+      console.error(
+        'Web task assessment overview: ' +
+        (err && err.stack ? err.stack : err)
+      );
+
+      return fail_(
+        'Unable to load the read-only task assessment overview.'
+      );
+    }
+  }
+
+  function getSubmissionAssessmentDetail_(
+    spreadsheetId,
+    taskName,
+    submissionRecordId
+  ) {
+    try {
+      var ss = open_(spreadsheetId);
+      var task = String(taskName || '').trim();
+      var submissionId = String(submissionRecordId || '').trim();
+
+      if (!task || taskNames_(ss).indexOf(task) === -1) {
+        return fail_('Choose a valid visible task tab.');
+      }
+
+      if (!submissionId) {
+        return fail_('Choose a valid student submission.');
+      }
+
+      var warnings = [];
+      var submissionDetail = null;
+      var attachments = [];
+      var criterionStates = [];
+      var history = [];
+
+      var submissionsSheet = ss.getSheetByName(
+        Config.SHEET_SUBMISSIONS
+      );
+
+      if (!submissionsSheet || submissionsSheet.getLastRow() < 1) {
+        return fail_('The Submissions sheet is unavailable.');
+      }
+
+      var submissionValues = submissionsSheet.getDataRange().getValues();
+      var submissionHeaders = submissionValues[0].map(function (header) {
+        return String(header || '').trim();
+      });
+
+      function submissionIndex_(name) {
+        return submissionHeaders.indexOf(name);
+      }
+
+      var idIndex = submissionIndex_('SubmissionRecordID');
+      var taskIndex = submissionIndex_('Task');
+      var taskNameIndex = submissionIndex_('TaskName');
+
+      if (idIndex === -1) {
+        return fail_(
+          'The Submissions sheet does not contain a SubmissionRecordID column.'
+        );
+      }
+
+      for (var r = 1; r < submissionValues.length; r++) {
+        var row = submissionValues[r];
+
+        if (String(row[idIndex] || '').trim() !== submissionId) {
+          continue;
+        }
+
+        var rowTask = '';
+
+        if (taskIndex !== -1) {
+          rowTask = String(row[taskIndex] || '').trim();
+        } else if (taskNameIndex !== -1) {
+          rowTask = String(row[taskNameIndex] || '').trim();
+        }
+
+        if (rowTask !== task) {
+          continue;
+        }
+
+        function field_(name) {
+          var index = submissionHeaders.indexOf(name);
+          return index === -1 ? '' : row[index];
+        }
+
+        submissionDetail = {
+          submissionRecordId: submissionId,
+          studentName: field_('StudentName'),
+          studentEmail: field_('StudentEmail'),
+          taskName: rowTask,
+          status: field_('Status'),
+          classroomState: field_('ClassroomState'),
+          turnedInTime: field_('TurnedInTime'),
+          updateTime: field_('UpdateTime'),
+          late: field_('Late'),
+          currentOfficial: field_('CurrentOfficial'),
+          approvedAt: field_('ApprovedAt'),
+          lockedAt: field_('LockedAt'),
+          currentMark: field_('ClassroomAssignedGrade')
+        };
+
+        break;
+      }
+
+      if (!submissionDetail) {
+        return fail_(
+          'The selected submission was not found for this task.'
+        );
+      }
+
+      var filesSheet = ss.getSheetByName(
+        Config.SHEET_SUBMISSION_FILES
+      );
+
+      if (filesSheet && filesSheet.getLastRow() > 1) {
+        var fileValues = filesSheet.getDataRange().getValues();
+        var fileHeaders = fileValues[0].map(function (header) {
+          return String(header || '').trim();
+        });
+
+        function fileIndex_(name) {
+          return fileHeaders.indexOf(name);
+        }
+
+        var fileSubmissionIdIndex = fileIndex_('SubmissionRecordID');
+
+        if (fileSubmissionIdIndex === -1) {
+          warnings.push(
+            'SubmissionFiles does not contain a SubmissionRecordID column.'
+          );
+        } else {
+          for (var f = 1; f < fileValues.length; f++) {
+            var fileRow = fileValues[f];
+
+            if (
+              String(fileRow[fileSubmissionIdIndex] || '').trim() !==
+              submissionId
+            ) {
+              continue;
+            }
+
+            function fileField_(name) {
+              var index = fileHeaders.indexOf(name);
+              return index === -1 ? '' : fileRow[index];
+            }
+
+            attachments.push({
+              fileName: fileField_('FileName'),
+              mimeType: fileField_('MimeType'),
+              alternateLink: fileField_('AlternateLink'),
+              thumbnailUrl: fileField_('ThumbnailUrl'),
+              fileSize: fileField_('FileSize'),
+              sourceType: fileField_('SourceType'),
+              eligibleForAI: fileField_('EligibleForAI'),
+              aiReviewStatus: fileField_('AIReviewStatus'),
+              limitations: fileField_('Limitations')
+            });
+          }
+        }
+      } else {
+        warnings.push(
+          'No SubmissionFiles sheet was found, or it has no attachment rows.'
+        );
+      }
+
+      var criterionSheet = ss.getSheetByName(
+        'CriterionAssessments'
+      );
+
+      if (criterionSheet && criterionSheet.getLastRow() > 1) {
+        var criterionValues = criterionSheet.getDataRange().getValues();
+        var criterionHeaders = criterionValues[0].map(function (header) {
+          return String(header || '').trim();
+        });
+
+        function criterionIndex_(name) {
+          return criterionHeaders.indexOf(name);
+        }
+
+        var criterionSubmissionIdIndex = criterionIndex_(
+          'SubmissionRecordID'
+        );
+
+        if (criterionSubmissionIdIndex === -1) {
+          warnings.push(
+            'CriterionAssessments does not contain a SubmissionRecordID column.'
+          );
+        } else {
+          for (var c = 1; c < criterionValues.length; c++) {
+            var criterionRow = criterionValues[c];
+
+            if (
+              String(
+                criterionRow[criterionSubmissionIdIndex] || ''
+              ).trim() !== submissionId
+            ) {
+              continue;
+            }
+
+            function criterionField_(name) {
+              var index = criterionHeaders.indexOf(name);
+              return index === -1 ? '' : criterionRow[index];
+            }
+
+            criterionStates.push({
+              criterionId: criterionField_('CriterionID'),
+              criterionTitle: criterionField_('CriterionTitle'),
+              band:
+                criterionField_('SelectedBand') ||
+                criterionField_('Band'),
+              state:
+                criterionField_('State') ||
+                criterionField_('AssessmentState'),
+              assessmentState:
+                criterionField_('AssessmentStatus') ||
+                criterionField_('ApprovalState') ||
+                criterionField_('Status'),
+              teacherNotes:
+                criterionField_('TeacherNotes') ||
+                criterionField_('Notes') ||
+                criterionField_('Feedback'),
+              aiDraftState:
+                criterionField_('AIDraftState') ||
+                criterionField_('AIState') ||
+                criterionField_('AISuggestion'),
+              evidenceSummary:
+                criterionField_('EvidenceSummary') ||
+                criterionField_('Evidence'),
+              evidenceLocation:
+                criterionField_('EvidenceLocation') ||
+                criterionField_('EvidenceReference'),
+              source:
+                criterionField_('Source') ||
+                criterionField_('UpdatedBy')
+            });
+          }
+        }
+      } else {
+        warnings.push(
+          'No CriterionAssessments sheet was found, or it has no matching rows.'
+        );
+      }
+
+      var historySheet = ss.getSheetByName(
+        'AssessmentHistory'
+      );
+
+      if (historySheet && historySheet.getLastRow() > 1) {
+        var historyValues = historySheet.getDataRange().getValues();
+        var historyHeaders = historyValues[0].map(function (header) {
+          return String(header || '').trim();
+        });
+
+        function historyIndex_(name) {
+          return historyHeaders.indexOf(name);
+        }
+
+        var historySubmissionIdIndex = historyIndex_(
+          'SubmissionRecordID'
+        );
+
+        if (historySubmissionIdIndex === -1) {
+          warnings.push(
+            'AssessmentHistory does not contain a SubmissionRecordID column.'
+          );
+        } else {
+          for (var h = 1; h < historyValues.length; h++) {
+            var historyRow = historyValues[h];
+
+            if (
+              String(
+                historyRow[historySubmissionIdIndex] || ''
+              ).trim() !== submissionId
+            ) {
+              continue;
+            }
+
+            function historyField_(name) {
+              var index = historyHeaders.indexOf(name);
+              return index === -1 ? '' : historyRow[index];
+            }
+
+            history.push({
+              timestamp:
+                historyField_('Timestamp') ||
+                historyField_('CreatedAt') ||
+                historyField_('UpdatedAt'),
+              action:
+                historyField_('Action') ||
+                historyField_('Event'),
+              state:
+                historyField_('State') ||
+                historyField_('AssessmentState'),
+              author:
+                historyField_('Author') ||
+                historyField_('ChangedBy') ||
+                historyField_('CreatedBy'),
+              assessmentId:
+                historyField_('AssessmentID') ||
+                historyField_('AssessmentRecordID'),
+              version:
+                historyField_('Version') ||
+                historyField_('AssessmentVersion')
+            });
+          }
+        }
+      } else {
+        warnings.push(
+          'No AssessmentHistory sheet was found, or it has no matching rows.'
+        );
+      }
+
+      return {
+        success: true,
+        data: {
+          submission: submissionDetail,
+          attachments: attachments,
+          criterionStates: criterionStates,
+          history: history,
+          warnings: warnings
+        }
+      };
+    } catch (err) {
+      console.error(
+        'Web submission assessment detail: ' +
+        (err && err.stack ? err.stack : err)
+      );
+
+      return fail_(
+        'Unable to load the read-only submission assessment detail.'
+      );
+    }
+  }
+
   return {
-  list: list_,
-  metadata: metadata_,
-  rubrics: rubrics_,
-  tasks: tasks_,
-  create: create_,
-  link: link_,
-  getTaskAssessmentOverview: getTaskAssessmentOverview_,
-  getSubmissionAssessmentDetail: getSubmissionAssessmentDetail_
-};
+    list: list_,
+    metadata: metadata_,
+    rubrics: rubrics_,
+    tasks: tasks_,
+    create: create_,
+    link: link_,
+    getTaskAssessmentOverview: getTaskAssessmentOverview_,
+    getSubmissionAssessmentDetail: getSubmissionAssessmentDetail_
+  };
 })();
 
 function apiWebListCandidateWorkbooks() {
@@ -721,6 +1266,10 @@ function apiWebGetSubmissionAssessmentDetail(
   );
 }
 
+/*
+ * Keep this as the only doGet in the entire Apps Script project.
+ * Remove it only if another current, intentional doGet exists elsewhere.
+ */
 function doGet(e) {
   return HtmlService
     .createHtmlOutputFromFile('WebApp')
