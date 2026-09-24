@@ -76,7 +76,7 @@
     </section>
     <section id="classroom" hidden aria-labelledby="classroom-title">
       <h2 id="classroom-title">Link Classroom coursework</h2>
-      <p class="hint">Select an initialised workbook, its task, and a Classroom course. Assignments without a due date remain visible but cannot be linked for scheduled import.</p>
+      <p class="hint">Select an initialised workbook, its task, and a Classroom course. All assignments can be linked. Assignments without a due date are not eligible for automatic due-date import; task-specific manual import has not been verified.</p>
       <label for="link-workbook">Grading workbook</label>
       <select id="link-workbook"><option value="">Select workbook</option></select>
       <label for="link-task">Task tab</label>
@@ -91,217 +91,28 @@
       'use strict';
       var $ = function (id) { return document.getElementById(id); };
       var state = { workbooks: [], rubricList: [], selectedWorkbookId: '', busy: false };
-      function call(name, args) {
-        return new Promise(function (resolve, reject) {
-          var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-          runner[name].apply(runner, args || []);
-        });
-      }
-      function message(text, error) {
-        var box = $('status'); box.textContent = text || '';
-        box.className = error ? 'error' : (text ? 'notice' : '');
-        box.setAttribute('role', error ? 'alert' : 'status');
-      }
+      function call(name, args) { return new Promise(function (resolve, reject) { var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject); runner[name].apply(runner, args || []); }); }
+      function message(text, error) { var box = $('status'); box.textContent = text || ''; box.className = error ? 'error' : (text ? 'notice' : ''); box.setAttribute('role', error ? 'alert' : 'status'); }
       function failure(err) { message(err && err.message ? err.message : 'Request failed. Please try again.', true); }
-      function resultOrThrow(res) {
-        if (!res || res.success === false) throw new Error(res && res.message || 'Operation failed.');
-        return res;
-      }
-
-      function taskFromRubricName(name) {
-  return String(name || '')
-    .replace(/\s*[-–—]?\s*Rubric\s*$/i, '')
-    .trim();
-}
-
-var taskEditedByUser = false;
-
-$('task').addEventListener('input', function () {
-  taskEditedByUser = true;
-});
-
-function suggestTaskFromRubric() {
-  if (taskEditedByUser) return;
-
-  var selection = $('rubric').value;
-  var rubricName = '';
-
-  if (selection === '__UPLOAD__') {
-    rubricName = $('rubric-name').value;
-  } else if (selection) {
-    var selected = state.rubricList.find(function (item) {
-      return item.id === selection;
-    });
-    rubricName = selected ? selected.name : '';
-  }
-
-  var suggested = taskFromRubricName(rubricName);
-  if (suggested) $('task').value = suggested;
-}
-
-$('rubric').addEventListener('change', suggestTaskFromRubric);
-$('rubric-name').addEventListener('input', suggestTaskFromRubric);
-
-$('year').value = String(new Date().getFullYear());
-
-      function show(view) {
-        ['home', 'details', 'setup', 'rubrics', 'classroom'].forEach(function (v) { $(v).hidden = v !== view; });
-        message('');
-        if (view === 'rubrics') renderRubrics();
-        if (view === 'classroom') { loadCourses(); loadTasks(); }
-        if (view === 'setup' && !state.rubricList.length) loadRubrics();
-      }
-      function renderWorkbooks() {
-        var root = $('workbooks'); root.replaceChildren();
-        var select = $('link-workbook'); select.replaceChildren();
-        var empty = document.createElement('option'); empty.value = ''; empty.textContent = 'Select workbook'; select.appendChild(empty);
-        if (!state.workbooks.length) { root.textContent = 'No initialised grading workbooks found.'; return; }
-        state.workbooks.forEach(function (item) {
-          var button = document.createElement('button');
-          button.type = 'button'; button.className = 'item'; button.textContent = String(item.name || 'Untitled workbook');
-          button.addEventListener('click', function () { selectWorkbook(item.id); }); root.appendChild(button);
-          var option = document.createElement('option'); option.value = item.id; option.textContent = item.name; select.appendChild(option);
-        });
-        if (state.selectedWorkbookId) select.value = state.selectedWorkbookId;
-      }
-      async function loadWorkbooks() {
-        $('workbooks').textContent = 'Loading workbooks…';
-        try {
-          var res = resultOrThrow(await call('apiWebListCandidateWorkbooks'));
-          state.workbooks = Array.isArray(res.data) ? res.data : [];
-          renderWorkbooks();
-        } catch (err) { $('workbooks').replaceChildren(); failure(err); }
-      }
-      async function selectWorkbook(id) {
-        message('Checking workbook…');
-        try {
-          var res = resultOrThrow(await call('apiWebGetWorkbookMetadata', [id]));
-          var data = res.data || {}; state.selectedWorkbookId = id;
-          $('link-workbook').value = id;
-          $('metadata').replaceChildren();
-          var name = document.createElement('p'); name.textContent = 'Workbook: ' + String(data.name || '');
-          var count = document.createElement('p'); count.textContent = 'Submission count: ' + String(data.submissionCount == null ? 'Unavailable' : data.submissionCount);
-          $('metadata').appendChild(name); $('metadata').appendChild(count); show('details');
-        } catch (err) { failure(err); }
-      }
-      function renderRubrics() {
-        var root = $('rubric-list'); root.replaceChildren();
-        if (!state.rubricList.length) { root.textContent = 'No shared rubrics found.'; return; }
-        state.rubricList.forEach(function (item) {
-          var p = document.createElement('p'); p.textContent = String(item.name || 'Untitled rubric'); root.appendChild(p);
-        });
-      }
-      async function loadRubrics() {
-        try {
-          var res = resultOrThrow(await call('apiWebListSharedRubrics'));
-          state.rubricList = Array.isArray(res.data) ? res.data : [];
-          var select = $('rubric');
-          Array.from(select.querySelectorAll('option[data-existing]')).forEach(function (o) { o.remove(); });
-          var upload = select.querySelector('[value="__UPLOAD__"]');
-          state.rubricList.forEach(function (item) {
-            var option = document.createElement('option'); option.value = item.id; option.textContent = item.name;
-            option.dataset.existing = 'true'; select.insertBefore(option, upload);
-          }); renderRubrics();
-        } catch (err) { failure(err); }
-      }
-      function readDocument(file) {
-        return new Promise(function (resolve, reject) {
-          if (!file) { reject(new Error('Select a rubric file.')); return; }
-          var ext = file.name.toLowerCase().split('.').pop();
-          var mime = ({ pdf: 'application/pdf', md: 'text/markdown', txt: 'text/plain' })[ext];
-          if (!mime) { reject(new Error('Only PDF, Markdown, or text files are supported.')); return; }
-          var reader = new FileReader();
-          reader.onerror = function () { reject(new Error('Could not read the rubric file.')); };
-          reader.onload = function () {
-            var value = String(reader.result || '');
-            if (value.indexOf(',') < 0) { reject(new Error('Could not read the rubric file.')); return; }
-            resolve({ fileName: file.name, mimeType: mime, base64: value.split(',')[1] });
-          }; reader.readAsDataURL(file);
-        });
-      }
-      async function submitSetup(event) {
-        event.preventDefault(); if (state.busy) return;
-        state.busy = true; $('create').disabled = true; message('Creating workbook…');
-        try {
-          var selection = $('rubric').value, doc = null, name = '';
-          if (selection === '__UPLOAD__') {
-            name = $('rubric-name').value.trim(); if (!name) throw new Error('Enter a rubric name.');
-            doc = await readDocument($('rubric-file').files[0]);
-          }
-          var res = resultOrThrow(await call('apiWebCreateWorkbook', [
-            $('course').value.trim(), $('task').value.trim(), $('year').value.trim(), selection, name, doc
-          ]));
-          message(res.message || 'Workbook created.');
-          await loadWorkbooks();
-          if (res.workbook && res.workbook.id) await selectWorkbook(res.workbook.id);
-        } catch (err) { failure(err); }
-        finally { state.busy = false; $('create').disabled = false; }
-      }
-      async function loadTasks() {
-        var id = $('link-workbook').value; state.selectedWorkbookId = id;
-        var select = $('link-task'); select.replaceChildren();
-        var option = document.createElement('option'); option.value = ''; option.textContent = 'Select task'; select.appendChild(option);
-        if (!id) return;
-        try {
-          var res = resultOrThrow(await call('apiWebListWorkbookTasks', [id]));
-          (res.data || []).forEach(function (task) {
-            var entry = document.createElement('option'); entry.value = task; entry.textContent = task; select.appendChild(entry);
-          });
-        } catch (err) { failure(err); }
-      }
-      async function loadCourses() {
-        $('coursework').replaceChildren();
-        try {
-          var res = resultOrThrow(await call('apiListTeacherCourses'));
-          var select = $('classroom-course'); select.replaceChildren();
-          var placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Select course'; select.appendChild(placeholder);
-          (res.courses || []).forEach(function (course) {
-            var option = document.createElement('option'); option.value = course.id; option.textContent = course.name || course.id; select.appendChild(option);
-          });
-        } catch (err) { failure(err); }
-      }
-      async function linkCoursework(courseId, workId, title, button) {
-        var wbId = $('link-workbook').value, task = $('link-task').value;
-        if (!wbId || !task) { message('Choose a grading workbook and task before linking an assignment.', true); return; }
-        if (state.busy) return;
-        if (!window.confirm('Link “' + title + '” to task “' + task + '” in the selected workbook?')) return;
-        state.busy = true; button.disabled = true; message('Linking Classroom assignment…');
-        try {
-          var res = resultOrThrow(await call('apiWebLinkClassroomAssignment', [wbId, task, courseId, workId]));
-          message(res.message || 'Assignment linked.');
-        } catch (err) { failure(err); }
-        finally { button.disabled = false; state.busy = false; }
-      }
-      async function loadCoursework() {
-        var courseId = $('classroom-course').value, root = $('coursework'); root.replaceChildren();
-        if (!courseId) return;
-        root.textContent = 'Loading assignments…';
-        try {
-          var res = resultOrThrow(await call('apiListCourseWork', [courseId])); root.replaceChildren();
-          if (!(res.coursework || []).length) { root.textContent = 'No coursework found.'; return; }
-          (res.coursework || []).forEach(function (item) {
-            if (!item.dueDate) {
-              var note = document.createElement('p');
-              note.textContent = String(item.title || '(Untitled assignment)') + ' — No due date; cannot link for scheduled import.';
-              root.appendChild(note); return;
-            }
-            var button = document.createElement('button'); button.type = 'button'; button.className = 'item';
-            button.textContent = String(item.title || '(Untitled assignment)') + ' — Due ' + item.dueDate;
-            button.addEventListener('click', function () { linkCoursework(courseId, item.id, item.title || 'Untitled assignment', button); });
-            root.appendChild(button);
-          });
-        } catch (err) { root.replaceChildren(); failure(err); }
-      }
-      document.querySelectorAll('nav [data-view]').forEach(function (button) {
-        button.addEventListener('click', function () { show(button.dataset.view); });
-      });
-      $('refresh').addEventListener('click', loadWorkbooks);
-      $('go-link').addEventListener('click', function () { show('classroom'); });
-      $('link-workbook').addEventListener('change', loadTasks);
-      $('rubric').addEventListener('change', function () { $('upload-fields').hidden = $('rubric').value !== '__UPLOAD__'; });
-      $('setup-form').addEventListener('submit', submitSetup);
-      $('classroom-course').addEventListener('change', loadCoursework);
-      loadWorkbooks();
+      function resultOrThrow(res) { if (!res || res.success === false) throw new Error(res && res.message || 'Operation failed.'); return res; }
+      function taskFromRubricName(name) { return String(name || '').replace(/\s*[-–—]?\s*Rubric\s*$/i, '').trim(); }
+      var taskEditedByUser = false;
+      $('task').addEventListener('input', function () { taskEditedByUser = true; });
+      function suggestTaskFromRubric() { if (taskEditedByUser) return; var selection = $('rubric').value, rubricName = ''; if (selection === '__UPLOAD__') rubricName = $('rubric-name').value; else if (selection) { var selected = state.rubricList.find(function (item) { return item.id === selection; }); rubricName = selected ? selected.name : ''; } var suggested = taskFromRubricName(rubricName); if (suggested) $('task').value = suggested; }
+      $('rubric').addEventListener('change', suggestTaskFromRubric); $('rubric-name').addEventListener('input', suggestTaskFromRubric); $('year').value = String(new Date().getFullYear());
+      function show(view) { ['home', 'details', 'setup', 'rubrics', 'classroom'].forEach(function (v) { $(v).hidden = v !== view; }); message(''); if (view === 'rubrics') renderRubrics(); if (view === 'classroom') { loadCourses(); loadTasks(); } if (view === 'setup' && !state.rubricList.length) loadRubrics(); }
+      function renderWorkbooks() { var root = $('workbooks'); root.replaceChildren(); var select = $('link-workbook'); select.replaceChildren(); var empty = document.createElement('option'); empty.value = ''; empty.textContent = 'Select workbook'; select.appendChild(empty); if (!state.workbooks.length) { root.textContent = 'No initialised grading workbooks found.'; return; } state.workbooks.forEach(function (item) { var button = document.createElement('button'); button.type = 'button'; button.className = 'item'; button.textContent = String(item.name || 'Untitled workbook'); button.addEventListener('click', function () { selectWorkbook(item.id); }); root.appendChild(button); var option = document.createElement('option'); option.value = item.id; option.textContent = item.name; select.appendChild(option); }); if (state.selectedWorkbookId) select.value = state.selectedWorkbookId; }
+      async function loadWorkbooks() { $('workbooks').textContent = 'Loading workbooks…'; try { var res = resultOrThrow(await call('apiWebListCandidateWorkbooks')); state.workbooks = Array.isArray(res.data) ? res.data : []; renderWorkbooks(); } catch (err) { $('workbooks').replaceChildren(); failure(err); } }
+      async function selectWorkbook(id) { message('Checking workbook…'); try { var res = resultOrThrow(await call('apiWebGetWorkbookMetadata', [id])); var data = res.data || {}; state.selectedWorkbookId = id; $('link-workbook').value = id; $('metadata').replaceChildren(); var name = document.createElement('p'); name.textContent = 'Workbook: ' + String(data.name || ''); var count = document.createElement('p'); count.textContent = 'Submission count: ' + String(data.submissionCount == null ? 'Unavailable' : data.submissionCount); $('metadata').appendChild(name); $('metadata').appendChild(count); show('details'); } catch (err) { failure(err); } }
+      function renderRubrics() { var root = $('rubric-list'); root.replaceChildren(); if (!state.rubricList.length) { root.textContent = 'No shared rubrics found.'; return; } state.rubricList.forEach(function (item) { var p = document.createElement('p'); p.textContent = String(item.name || 'Untitled rubric'); root.appendChild(p); }); }
+      async function loadRubrics() { try { var res = resultOrThrow(await call('apiWebListSharedRubrics')); state.rubricList = Array.isArray(res.data) ? res.data : []; var select = $('rubric'); Array.from(select.querySelectorAll('option[data-existing]')).forEach(function (o) { o.remove(); }); var upload = select.querySelector('[value="__UPLOAD__"]'); state.rubricList.forEach(function (item) { var option = document.createElement('option'); option.value = item.id; option.textContent = item.name; option.dataset.existing = 'true'; select.insertBefore(option, upload); }); renderRubrics(); } catch (err) { failure(err); } }
+      function readDocument(file) { return new Promise(function (resolve, reject) { if (!file) { reject(new Error('Select a rubric file.')); return; } var ext = file.name.toLowerCase().split('.').pop(); var mime = ({ pdf: 'application/pdf', md: 'text/markdown', txt: 'text/plain' })[ext]; if (!mime) { reject(new Error('Only PDF, Markdown, or text files are supported.')); return; } var reader = new FileReader(); reader.onerror = function () { reject(new Error('Could not read the rubric file.')); }; reader.onload = function () { var value = String(reader.result || ''); if (value.indexOf(',') < 0) { reject(new Error('Could not read the rubric file.')); return; } resolve({ fileName: file.name, mimeType: mime, base64: value.split(',')[1] }); }; reader.readAsDataURL(file); }); }
+      async function submitSetup(event) { event.preventDefault(); if (state.busy) return; state.busy = true; $('create').disabled = true; message('Creating workbook…'); try { var selection = $('rubric').value, doc = null, name = ''; if (selection === '__UPLOAD__') { name = $('rubric-name').value.trim(); if (!name) throw new Error('Enter a rubric name.'); doc = await readDocument($('rubric-file').files[0]); } var res = resultOrThrow(await call('apiWebCreateWorkbook', [$('course').value.trim(), $('task').value.trim(), $('year').value.trim(), selection, name, doc])); message(res.message || 'Workbook created.'); await loadWorkbooks(); if (res.workbook && res.workbook.id) await selectWorkbook(res.workbook.id); } catch (err) { failure(err); } finally { state.busy = false; $('create').disabled = false; } }
+      async function loadTasks() { var id = $('link-workbook').value; state.selectedWorkbookId = id; var select = $('link-task'); select.replaceChildren(); var option = document.createElement('option'); option.value = ''; option.textContent = 'Select task'; select.appendChild(option); if (!id) return; try { var res = resultOrThrow(await call('apiWebListWorkbookTasks', [id])); (res.data || []).forEach(function (task) { var entry = document.createElement('option'); entry.value = task; entry.textContent = task; select.appendChild(entry); }); } catch (err) { failure(err); } }
+      async function loadCourses() { $('coursework').replaceChildren(); try { var res = resultOrThrow(await call('apiListTeacherCourses')); var select = $('classroom-course'); select.replaceChildren(); var placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Select course'; select.appendChild(placeholder); (res.courses || []).forEach(function (course) { var option = document.createElement('option'); option.value = course.id; option.textContent = course.name || course.id; select.appendChild(option); }); } catch (err) { failure(err); } }
+      async function linkCoursework(courseId, workId, title, button) { var wbId = $('link-workbook').value, task = $('link-task').value; if (!wbId || !task) { message('Choose a grading workbook and task before linking an assignment.', true); return; } if (state.busy) return; if (!window.confirm('Link “' + title + '” to task “' + task + '” in the selected workbook?')) return; state.busy = true; button.disabled = true; message('Linking Classroom assignment…'); try { var res = resultOrThrow(await call('apiWebLinkClassroomAssignment', [wbId, task, courseId, workId])); message(res.message || 'Assignment linked.'); } catch (err) { failure(err); } finally { button.disabled = false; state.busy = false; } }
+      async function loadCoursework() { var courseId = $('classroom-course').value, root = $('coursework'); root.replaceChildren(); if (!courseId) return; root.textContent = 'Loading assignments…'; try { var res = resultOrThrow(await call('apiListCourseWork', [courseId])); root.replaceChildren(); if (!(res.coursework || []).length) { root.textContent = 'No coursework found.'; return; } (res.coursework || []).forEach(function (item) { if (!item || item.id == null || String(item.id).trim() === '') return; var title = String(item.title || '(Untitled assignment)'); var button = document.createElement('button'); button.type = 'button'; button.className = 'item'; button.textContent = title + (item.dueDate ? ' — Due ' + item.dueDate : ' — No due date; manual import not verified'); button.addEventListener('click', function () { linkCoursework(courseId, item.id, title, button); }); root.appendChild(button); }); } catch (err) { root.replaceChildren(); failure(err); } }
+      document.querySelectorAll('nav [data-view]').forEach(function (button) { button.addEventListener('click', function () { show(button.dataset.view); }); }); $('refresh').addEventListener('click', loadWorkbooks); $('go-link').addEventListener('click', function () { show('classroom'); }); $('link-workbook').addEventListener('change', loadTasks); $('rubric').addEventListener('change', function () { $('upload-fields').hidden = $('rubric').value !== '__UPLOAD__'; }); $('setup-form').addEventListener('submit', submitSetup); $('classroom-course').addEventListener('change', loadCoursework); loadWorkbooks();
     }());
   </script>
 </body>
