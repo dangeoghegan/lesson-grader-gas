@@ -699,7 +699,24 @@ function apiWebLinkClassroomAssignment(
     courseWorkId
   );
 }
+function apiWebGetTaskAssessmentOverview(spreadsheetId, taskName) {
+  return LessonGraderWeb.getTaskAssessmentOverview(
+    spreadsheetId,
+    taskName
+  );
+}
 
+function apiWebGetSubmissionAssessmentDetail(
+  spreadsheetId,
+  taskName,
+  submissionRecordId
+) {
+  return LessonGraderWeb.getSubmissionAssessmentDetail(
+    spreadsheetId,
+    taskName,
+    submissionRecordId
+  );
+}
 /*
  * Keep this as the only doGet in the entire Apps Script project.
  * Remove it only if another current, intentional doGet exists elsewhere.
