@@ -269,7 +269,7 @@ var category = internalCategory_();
       return result;
     } catch (err) {
       console.error('Web create workbook ' + (typeof workbookId !== 'undefined' ? workbookId : '') + ': ' + err.stack);
-      return fail_('Workbook setup failed: ' + err.message);
+      return fail_('Workbook setup failed. Check Apps Script executions.');
     }
   }
   function link_(id, taskName, courseId, workId) {
