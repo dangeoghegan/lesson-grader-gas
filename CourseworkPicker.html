@@ -47,6 +47,7 @@
     }
     .btn-primary { background: #2563eb; color: #fff; }
     .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-secondary { background: #e2e8f0; color: #334155; }
     .spinner {
       display: inline-block;
@@ -66,17 +67,17 @@
   </style>
 </head>
 <body>
-  <h2>Select Google Classroom Assignment</h2>
+  <h2 id="pickerTitle">Select Google Classroom Assignment</h2>
   <div class="form-group">
     <label for="courseSelect">1. Select Classroom Course:</label>
-    <select id="courseSelect" onchange="onCourseChanged()">
+    <select id="courseSelect">
       <option value="">-- Loading courses... --</option>
     </select>
   </div>
 
   <div class="form-group">
     <label for="assignmentSelect">2. Select Assignment / Coursework:</label>
-    <select id="assignmentSelect" onchange="onAssignmentChanged()" disabled>
+    <select id="assignmentSelect" disabled>
       <option value="">-- Select a course first --</option>
     </select>
   </div>
@@ -87,55 +88,105 @@
     <div><b>State:</b> <span id="infoState">-</span></div>
   </div>
 
-  <div id="statusMsg" class="status-msg"></div>
+  <div id="statusMsg" class="status-msg" role="status" aria-live="polite"></div>
 
   <div class="btn-group">
-    <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
-    <button id="saveBtn" class="btn-primary" onclick="saveSelection()" disabled>Save & Set Active</button>
+    <button id="cancelBtn" class="btn-secondary" type="button">Cancel</button>
+    <button id="saveBtn" class="btn-primary" type="button" disabled>Save &amp; Set Active</button>
   </div>
 
   <script>
     var coursesMap = {};
     var assignmentsMap = {};
+    // Apps Script evaluates this file with HtmlService.createTemplateFromFile(...).evaluate().
+    var passedCourseCode = <?!= JSON.stringify(typeof passedCourseCode !== 'undefined' ? String(passedCourseCode) : '') ?>;
+    var passedTaskName = <?!= JSON.stringify(typeof passedTaskName !== 'undefined' ? String(passedTaskName) : '') ?>;
+    var courseLoadSequence = 0;
 
-    // Inject parameters from Apps Script template context
-    var passedCourseCode = "<?= typeof passedCourseCode !== 'undefined' ? passedCourseCode : '' ?>";
-    var passedTaskName = "<?= typeof passedTaskName !== 'undefined' ? passedTaskName : '' ?>";
+    function isUnevaluatedTemplateValue(value) {
+      var text = String(value || '');
+      return text.indexOf('<?') !== -1 || text.indexOf('?>') !== -1;
+    }
+    if (isUnevaluatedTemplateValue(passedCourseCode)) passedCourseCode = '';
+    if (isUnevaluatedTemplateValue(passedTaskName)) passedTaskName = '';
 
-    window.onload = function() {
+    window.addEventListener('load', function() {
       if (passedTaskName) {
-        document.querySelector('h2').innerText = "Link Classroom to Task: " + passedTaskName;
+        document.getElementById('pickerTitle').textContent = 'Link Classroom to Task: ' + passedTaskName;
+        document.getElementById('saveBtn').textContent = 'Link Assignment to Task';
       }
+      document.getElementById('courseSelect').addEventListener('change', onCourseChanged);
+      document.getElementById('assignmentSelect').addEventListener('change', onAssignmentChanged);
+      document.getElementById('saveBtn').addEventListener('click', saveSelection);
+      document.getElementById('cancelBtn').addEventListener('click', function() { google.script.host.close(); });
       loadCourses();
-    };
+    });
+
+    function showStatus(message, type, loading) {
+      var el = document.getElementById('statusMsg');
+      el.className = 'status-msg' + (type ? ' ' + type : '');
+      el.replaceChildren();
+      if (loading) {
+        var spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        el.appendChild(spinner);
+      }
+      el.appendChild(document.createTextNode(message || ''));
+    }
+
+    function resetAssignments(label) {
+      var select = document.getElementById('assignmentSelect');
+      select.replaceChildren();
+      select.add(new Option(label, ''));
+      select.disabled = true;
+      assignmentsMap = {};
+      document.getElementById('saveBtn').disabled = true;
+      document.getElementById('assignmentInfo').style.display = 'none';
+    }
 
     function loadCourses() {
-      showStatus('<span class="spinner"></span> Loading your Google Classroom courses...', '');
+      showStatus('Loading your Google Classroom courses...', '', true);
       google.script.run
         .withSuccessHandler(function(res) {
-          if (!res.success) {
-            showStatus(res.message, 'error');
+          if (!res || !res.success) {
+            showStatus((res && res.message) || 'Could not load courses.', 'error');
             return;
           }
           var select = document.getElementById('courseSelect');
-          select.innerHTML = '<option value="">-- Choose a course --</option>';
+          select.replaceChildren();
+          select.add(new Option('-- Choose a course --', ''));
+          coursesMap = {};
           var courses = res.courses || [];
           if (!courses.length) {
-            select.innerHTML = '<option value="">-- No active courses found --</option>';
+            resetAssignments('-- No active courses found --');
             showStatus('No active Classroom courses found for your account.', 'error');
             return;
           }
           courses.forEach(function(c) {
-            coursesMap[c.id] = c;
-            var opt = document.createElement('option');
-            opt.value = c.id;
-            opt.textContent = c.name + (c.section ? ' (' + c.section + ')' : '');
-            select.appendChild(opt);
+            coursesMap[String(c.id)] = c;
+            select.add(new Option(c.name + (c.section ? ' (' + c.section + ')' : ''), String(c.id)));
           });
           showStatus('', '');
+          if (passedCourseCode) {
+            var target = passedCourseCode.trim().toLowerCase();
+            for (var i = 0; i < courses.length; i++) {
+              var c = courses[i];
+              if (String(c.id) === passedCourseCode ||
+                  String(c.name || '').trim().toLowerCase() === target ||
+                  String(c.section || '').trim().toLowerCase() === target) {
+                select.value = String(c.id);
+                onCourseChanged();
+                break;
+              }
+            }
+            if (!select.value) {
+              showStatus('Select the Classroom course matching ' + passedCourseCode + '.', '');
+            }
+          }
         })
         .withFailureHandler(function(err) {
-          showStatus('Error loading courses: ' + err.message, 'error');
+          showStatus('Error loading courses: ' + ((err && err.message) || String(err)), 'error');
         })
         .apiListTeacherCourses();
     }
@@ -143,113 +194,94 @@
     function onCourseChanged() {
       var courseId = document.getElementById('courseSelect').value;
       var aSelect = document.getElementById('assignmentSelect');
-      var saveBtn = document.getElementById('saveBtn');
-      var infoBox = document.getElementById('assignmentInfo');
-      infoBox.style.display = 'none';
-      saveBtn.disabled = true;
-
+      var requestId = ++courseLoadSequence;
+      resetAssignments(courseId ? '-- Loading assignments... --' : '-- Select a course first --');
       if (!courseId) {
-        aSelect.innerHTML = '<option value="">-- Select a course first --</option>';
-        aSelect.disabled = true;
+        showStatus('', '');
         return;
       }
-
-      aSelect.disabled = true;
-      aSelect.innerHTML = '<option value="">-- Loading assignments... --</option>';
-      showStatus('<span class="spinner"></span> Loading coursework assignments...', '');
-
+      showStatus('Loading coursework assignments...', '', true);
       google.script.run
         .withSuccessHandler(function(res) {
-          if (!res.success) {
-            showStatus(res.message, 'error');
+          if (requestId !== courseLoadSequence ||
+              document.getElementById('courseSelect').value !== courseId) return;
+          if (!res || !res.success) {
+            resetAssignments('-- Unable to load coursework --');
+            showStatus((res && res.message) || 'Could not load coursework.', 'error');
             return;
           }
           var cwList = res.coursework || [];
-          aSelect.innerHTML = '<option value="">-- Choose an assignment --</option>';
-          assignmentsMap = {};
-
-          // Filter coursework: ONLY show assignments that HAVE a due date.
-          var filteredCwList = cwList.filter(function(cw) {
-            return cw.dueDate && Object.keys(cw.dueDate).length > 0 && cw.dueDate !== 'No due date set';
-          });
-
-          if (!filteredCwList.length) {
-            aSelect.innerHTML = '<option value="">-- No valid assignments found --</option>';
-            showStatus('No published assignments with a Due Date found in this course.', 'error');
+          resetAssignments(cwList.length ? '-- Choose an assignment --' : '-- No coursework found in this Classroom course --');
+          if (!cwList.length) {
+            showStatus('No coursework was returned for this Classroom course.', 'error');
             return;
           }
-          filteredCwList.forEach(function(cw) {
-            assignmentsMap[cw.id] = cw;
-            var opt = document.createElement('option');
-            opt.value = cw.id;
-            opt.textContent = cw.title + ' (Max: ' + cw.maxPoints + ' pts)';
-            aSelect.appendChild(opt);
+          cwList.forEach(function(cw) {
+            if (!cw || cw.id == null) return;
+            assignmentsMap[String(cw.id)] = cw;
+            var dueLabel = cw.dueDate ? 'Due: ' + cw.dueDate : 'No due date — manual import only';
+            var stateLabel = cw.state ? ' | ' + cw.state : '';
+            var marks = cw.maxPoints == null ? 0 : cw.maxPoints;
+            aSelect.add(new Option((cw.title || '(Untitled assignment)') +
+              ' (' + marks + ' pts | ' + dueLabel + stateLabel + ')', String(cw.id)));
           });
           aSelect.disabled = false;
-          showStatus('', '');
+          showStatus(cwList.length + ' Classroom coursework item(s) available.', 'success');
         })
         .withFailureHandler(function(err) {
-          showStatus('Error loading coursework: ' + err.message, 'error');
+          if (requestId !== courseLoadSequence) return;
+          resetAssignments('-- Unable to load coursework --');
+          showStatus('Error loading coursework: ' + ((err && err.message) || String(err)), 'error');
         })
         .apiListCourseWork(courseId);
     }
 
     function onAssignmentChanged() {
       var cwId = document.getElementById('assignmentSelect').value;
-      var saveBtn = document.getElementById('saveBtn');
+      var cw = assignmentsMap[cwId];
       var infoBox = document.getElementById('assignmentInfo');
-
-      if (!cwId || !assignmentsMap[cwId]) {
+      if (!cw) {
         infoBox.style.display = 'none';
-        saveBtn.disabled = true;
+        document.getElementById('saveBtn').disabled = true;
         return;
       }
-
-      var cw = assignmentsMap[cwId];
-      document.getElementById('infoMaxPoints').textContent = cw.maxPoints + ' points';
-      document.getElementById('infoDueDate').textContent = cw.dueDate || 'No due date set';
-      document.getElementById('infoState').textContent = cw.state || 'PUBLISHED';
+      document.getElementById('infoMaxPoints').textContent =
+        (cw.maxPoints == null ? 0 : cw.maxPoints) + ' points';
+      document.getElementById('infoDueDate').textContent =
+        cw.dueDate ? cw.dueDate : 'No due date — manual import only';
+      document.getElementById('infoState').textContent = cw.state || 'Unknown';
       infoBox.style.display = 'block';
-      saveBtn.disabled = false;
+      document.getElementById('saveBtn').disabled = false;
     }
 
     function saveSelection() {
       var courseId = document.getElementById('courseSelect').value;
       var cwId = document.getElementById('assignmentSelect').value;
-      if (!courseId || !cwId) return;
-
-      var saveBtn = document.getElementById('saveBtn');
-      saveBtn.disabled = true;
-      showStatus('<span class="spinner"></span> Saving Classroom configuration...', '');
-
+      if (!courseId || !cwId || !assignmentsMap[cwId]) return;
+      var btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      showStatus('Saving Classroom configuration...', '', true);
       var handler = google.script.run
         .withSuccessHandler(function(res) {
-          if (res.success) {
-            showStatus('Configuration saved! You can now import submissions.', 'success');
-            setTimeout(function() {
-              google.script.host.close();
-            }, 1200);
+          if (res && res.success) {
+            showStatus(assignmentsMap[cwId].dueDate
+              ? 'Assignment linked. Hourly import applies when its due date arrives.'
+              : 'Assignment linked. No due date: use manual import; hourly import will skip it.', 'success');
+            setTimeout(function() { google.script.host.close(); }, 1200);
           } else {
-            showStatus('Save failed: ' + res.message, 'error');
-            saveBtn.disabled = false;
+            showStatus('Save failed: ' + ((res && res.message) || 'Unknown error'), 'error');
+            btn.disabled = false;
           }
         })
         .withFailureHandler(function(err) {
-          showStatus('Error saving selection: ' + err.message, 'error');
-          saveBtn.disabled = false;
+          showStatus('Error saving selection: ' + ((err && err.message) || String(err)), 'error');
+          btn.disabled = false;
         });
-
       if (passedTaskName) {
         handler.apiSaveClassroomSelectionForTask(courseId, cwId, passedTaskName);
       } else {
         handler.apiSaveClassroomSelection(courseId, cwId);
       }
-    }
-
-    function showStatus(html, type) {
-      var el = document.getElementById('statusMsg');
-      el.className = 'status-msg ' + type;
-      el.innerHTML = html;
     }
   </script>
 </body>
