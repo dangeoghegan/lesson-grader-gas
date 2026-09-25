@@ -10,6 +10,7 @@
 - `WebApp.html` is a responsive teacher workspace (desktop sidebar / mobile bottom navigation) with dashboard, task roster, evidence, scoring studio, feedback, rubric builder/library, Classroom link and Gemini Settings. Mic dictation in the web studio is opt-in and browser-dependent; speech goes into the teacher note, never directly into a grade.
 - `WebAccess.gs` checks the accessing user's email against `LESSON_GRADER_ALLOWED_EMAILS` (missing configuration **denies access**). The Gemini key is kept only in Script Properties; never in the repository, a URL query string or an API response. Settings has **Save key** and **Test connection** actions. The test sends only `Ping`, not student data.
 - `appsscript.json` declares the Classroom advanced service and V8 runtime; Node syntax/check/test harness and mock-only UI preview were added. **No credentials, student data or real Drive IDs are committed.**
+- `site/index.html` is a static launcher for GitHub Pages (see [docs/LAUNCHER.md](LAUNCHER.md)). The Apps Script **web app URL is entered in the page's Settings and kept in the browser**, so it can be changed without editing code in GitHub; the page contains no deployment id, key or teacher list. `doGet` answers one read-only handshake (`?lgapi=status`) for its connection check — an allowlisted probe name, a masked account, no key and no allowlist — and still serves `WebApp.html` for every other request. Grading itself is unchanged and still runs inside the deployment.
 
 ## Before touching a live project
 
@@ -51,6 +52,7 @@ npm ci
 npm run check     # compile all .gs files, HTML scripts, one doGet, no duplicate legacy modules
 npm test          # pure rubric scoring + mocked Sheets/Drive/Classroom/auth/UI smoke tests
 npm run preview   # mock-only interface on 0.0.0.0:4173 (never stores a real key)
+                  #   /launcher serves the static GitHub Pages launcher
 ```
 
 The design preview is **sample data only**. It disables entering a Gemini key/uploading real files and displays a prominent preview badge. Approval simulations in the preview never write Google data. Node tests do not constitute a live GAS deployment test; they mock Google services. Validate at narrow (390px), tablet and desktop sizes, with keyboard-only navigation and a screen reader on a real deployment.
@@ -58,6 +60,7 @@ The design preview is **sample data only**. It disables entering a Gemini key/up
 ### Live test matrix (after approval and backup)
 
 - Allowed user loads web app; unallowed/blank user cannot call grade/import/settings APIs. Key is never echoed or written to query strings/logs. Test first with a non-student `Ping`.
+- Launcher: open the published page in Chrome, Firefox and Safari with an allowed account and a denied account. Confirm the saved address persists across reloads, `Test connection` reports **Connected** / **Not allowlisted** / **No Google account seen** correctly, the masked account is the only identity shown, and the embedded app behaves identically to opening the `/exec` URL directly (use **Open in tab** where the browser blocks embedded Google cookies).
 - New **non-Jewellery** task (e.g. water filter) with a 10+15-mark rubric: import/enter, review, save, approve, PDF all use that task's criteria; missing marks/unknown bands cannot activate.
 - Existing Jewellery task still works in its bound Sheets dialog; non-Jewellery task cannot call its 12-criterion grade API or sync through the legacy entry point. Compare legacy grade results against a backed-up workbook before deployment.
 - Same student in two Classroom assignments stays in two task rows. Changed evidence creates a new version, current flag moves only after new files exist, and old approval remains intact.

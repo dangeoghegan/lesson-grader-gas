@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#172b28">
+  <meta name="description" content="Launch the Lesson Grader Apps Script web app from a plain GitHub-hosted page. The deployment address lives in this page's settings, not in its code.">
+  <!--
+    Lesson Grader launcher.
+
+    This file is static and can be hosted on GitHub Pages. It contains NO
+    deployment URL, NO API key and NO teacher list: the Apps Script web app
+    address is entered in Settings and kept in this browser's localStorage, so
+    it can be changed at any time without editing code in GitHub.
+
+    All grading stays inside the Apps Script deployment (embedded below or
+    opened in a new tab). Sign-in, the LESSON_GRADER_ALLOWED_EMAILS allowlist
+    and the Gemini key remain server-side in Apps Script Script Properties.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://script.google.com https://script.googleusercontent.com; connect-src 'self' https://script.google.com; frame-src https://script.google.com https://script.googleusercontent.com https://*.google.com https://*.googleusercontent.com; form-action 'self'; object-src 'none'; upgrade-insecure-requests">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23172b28'/%3E%3Cpath d='M10 20.5l3.6-9 3 6.4 2-3.4 3.4 6z' fill='%23dff59a'/%3E%3C/svg%3E">
+  <title>Lesson Grader — launcher</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    :root {
+      --ink: #182a28; --forest: #172b28; --forest-light: #253f3a;
+      --muted: #62726d; --line: #e4e9e2; --paper: #f6f7f2; --white: #ffffff;
+      --lime: #dff59a; --lime-deep: #a3c648; --sky: #dbeafb; --blue: #326594;
+      --rose: #fff0e9; --red: #a24637; --radius: 18px;
+      --shadow: 0 16px 48px rgba(27, 49, 41, .055), 0 2px 8px rgba(27, 49, 41, .03);
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      color: var(--ink); background: var(--paper);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; min-height: 100vh; min-height: 100dvh;
+      display: grid; grid-template-rows: auto minmax(0, 1fr);
+    }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .48; }
+    button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+      outline: 3px solid #72a6bd; outline-offset: 3px;
+    }
+    a { color: inherit; }
+    h1, h2, h3 { font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif; letter-spacing: -.055em; margin: 0 0 8px; }
+    h1 { font-size: clamp(26px, 3vw, 38px); line-height: 1.14; font-weight: 800; }
+    h2 { font-size: 19px; font-weight: 800; }
+    h3 { font-size: 14px; font-weight: 800; }
+    p { line-height: 1.62; margin: 0 0 12px; }
+    ul, ol { line-height: 1.62; margin: 0 0 12px; padding-left: 20px; }
+    li + li { margin-top: 6px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; background: #eef2ea; border-radius: 5px; padding: 1px 5px; word-break: break-all; }
+    [hidden] { display: none !important; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .muted { color: var(--muted); }
+    .tiny { font-size: 11px; }
+    .eyebrow { font-size: 10px; letter-spacing: .16em; font-weight: 800; text-transform: uppercase; color: #64856a; margin-bottom: 9px; }
+
+    /* ---------- top bar ---------- */
+    .topbar {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 12px clamp(14px, 3vw, 26px);
+      background: var(--forest); color: #eef2ea;
+      border-bottom: 1px solid #0f1e1c;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: inherit; min-width: 0; }
+    .brand-mark {
+      width: 36px; height: 36px; flex: none; display: grid; place-items: center;
+      background: var(--lime); color: var(--forest); border-radius: 11px; transform: rotate(-7deg);
+      box-shadow: 0 4px 0 rgba(0,0,0,.22);
+    }
+    .brand-mark svg { transform: rotate(7deg); }
+    .brand-name { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 17px; font-weight: 800; letter-spacing: -.06em; line-height: 1.05; }
+    .brand-sub { font-size: 9.5px; color: #a7bdb2; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; margin-top: 4px; }
+    .topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+    .status {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px;
+      background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.13);
+      border-radius: 40px; font-size: 11px; font-weight: 800; letter-spacing: .01em; color: #dfe8dd;
+      max-width: min(58vw, 420px);
+    }
+    .status .dot { width: 8px; height: 8px; border-radius: 50%; background: #8ea39a; flex: none; }
+    .status[data-state="connected"] .dot { background: #7fce7c; box-shadow: 0 0 0 3px rgba(127,206,124,.24); }
+    .status[data-state="checking"] .dot { background: #e7d089; box-shadow: 0 0 0 3px rgba(231,208,137,.2); animation: pulse 1.1s ease-in-out infinite; }
+    .status[data-state="anonymous"], .status[data-state="denied"], .status[data-state="rejected"] .dot { background: #e79a86; box-shadow: 0 0 0 3px rgba(231,154,134,.2); }
+    .status[data-state="unreachable"] .dot { background: #9fb2bd; }
+    @keyframes pulse { 50% { opacity: .35; } }
+    .status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tbtn {
+      display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 7px 13px;
+      background: rgba(255,255,255,.09); color: #f2f5ef; border: 1px solid rgba(255,255,255,.16);
+      border-radius: 10px; font-size: 11.5px; font-weight: 800; text-decoration: none;
+      transition: background .18s, transform .18s;
+    }
+    .tbtn:hover:not(:disabled) { background: rgba(255,255,255,.17); transform: translateY(-1px); }
+    .tbtn-lime { background: var(--lime); color: #1b382e; border-color: var(--lime); }
+    .tbtn-lime:hover:not(:disabled) { background: #e9fbb4; }
+    .tbtn svg { width: 15px; height: 15px; flex: none; }
+
+    /* ---------- layout ---------- */
+    main { min-height: 0; display: flex; flex-direction: column; }
+    main.mode-embed { overflow: hidden; }
+    main.mode-page { overflow: auto; }
+    .page { width: 100%; max-width: 1020px; margin: 0 auto; padding: clamp(20px, 3.4vw, 40px) clamp(16px, 3vw, 30px) 64px; }
+    .card { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: clamp(18px, 2.4vw, 28px); }
+    .card + .card { margin-top: 16px; }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+    .lead { color: var(--muted); font-size: 13.5px; max-width: 70ch; }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(258px, 1fr)); gap: 14px; }
+    .note {
+      border: 1px solid var(--line); background: #f9fbf7; border-radius: 13px;
+      padding: 13px 15px; font-size: 12.5px; color: #45594f;
+    }
+    .note strong { color: var(--ink); }
+    .note-warn { background: #fff6e6; border-color: #f0dfba; color: #7d5420; }
+    .note-danger { background: var(--rose); border-color: #f0d6cb; color: #8d4030; }
+
+    /* ---------- form ---------- */
+    .field { margin-bottom: 14px; }
+    .field > label, .field-label { display: block; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #4d6b58; margin-bottom: 6px; }
+    input[type="text"], input[type="url"], input[type="search"], textarea {
+      width: 100%; min-height: 45px; padding: 11px 13px; border: 1px solid #d7e0d4;
+      border-radius: 11px; background: #fcfdfb; font-size: 13.5px;
+    }
+    textarea { min-height: 92px; resize: vertical; font-family: inherit; }
+    input:focus, textarea:focus { border-color: #9dc08f; background: var(--white); }
+    .hint { font-size: 11.5px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 44px; padding: 11px 16px; border-radius: 11px; border: 1px solid #dbe4d9;
+      background: var(--white); font-size: 12.5px; font-weight: 800; text-decoration: none;
+      transition: transform .18s, box-shadow .18s, background .18s, border-color .18s;
+    }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 15px rgba(26,48,41,.1); border-color: #b8cdb5; }
+    .btn svg { width: 15px; height: 15px; flex: none; }
+    .btn-dark { background: var(--forest); border-color: var(--forest); color: white; }
+    .btn-dark:hover:not(:disabled) { background: #294b42; }
+    .btn-lime { background: var(--lime); border-color: var(--lime); color: #1b382e; }
+    .btn-lime:hover:not(:disabled) { background: #e9fbb4; }
+    .btn-ghost { border-color: transparent; background: transparent; color: #51665e; }
+    .btn-ghost:hover:not(:disabled) { background: #e9efe6; box-shadow: none; }
+    .btn-danger { background: #fffaf6; border-color: #f0d6cb; color: #954a38; }
+    .btn-sm { min-height: 34px; padding: 7px 11px; font-size: 11.5px; }
+    .actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .choice { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcf9; }
+    .choice + .choice { margin-top: 9px; }
+    .choice input { margin-top: 3px; }
+    .choice strong { display: block; font-size: 13px; }
+    .choice span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+    .flash { border-radius: 11px; padding: 10px 13px; font-size: 12.5px; font-weight: 700; margin-top: 12px; }
+    .flash-error { background: var(--rose); color: #8d4030; border: 1px solid #f0d6cb; }
+    .flash-ok { background: #eef7e6; color: #3f6b32; border: 1px solid #cfe6bd; }
+
+    /* ---------- saved connections ---------- */
+    .conn-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+    .conn {
+      display: flex; align-items: center; gap: 12px; padding: 12px 13px;
+      border: 1px solid var(--line); border-radius: 13px; background: #fbfcf9; flex-wrap: wrap;
+    }
+    .conn.is-active { border-color: #a8cd95; background: #f5fbef; box-shadow: inset 3px 0 0 var(--lime-deep); }
+    .conn-main { min-width: 0; flex: 1 1 220px; }
+    .conn-label { font-size: 13.5px; font-weight: 800; display: flex; align-items: center; gap: 7px; }
+    .conn-url { font-size: 11.5px; color: var(--muted); word-break: break-all; margin-top: 3px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 30px; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; background: #e7f0de; color: #3f6b32; }
+    .pill-warn { background: #fff0cf; color: #845525; }
+
+    /* ---------- embedded app ---------- */
+    .frame-wrap { flex: 1 1 auto; min-height: 0; position: relative; background: var(--paper); }
+    .frame-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--white); }
+    .frame-bar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 8px clamp(12px, 3vw, 22px); background: #eef2ea; border-bottom: 1px solid var(--line);
+      font-size: 11.5px; color: #4a5f53;
+    }
+    .frame-bar code { background: #e2e9dc; }
+    .open-card { text-align: left; }
+    .steps { counter-reset: step; list-style: none; padding-left: 0; }
+    .steps > li { position: relative; padding-left: 34px; }
+    .steps > li::before {
+      counter-increment: step; content: counter(step);
+      position: absolute; left: 0; top: 1px; width: 23px; height: 23px; border-radius: 50%;
+      display: grid; place-items: center; background: var(--forest); color: var(--lime);
+      font-size: 11px; font-weight: 800;
+    }
+    details { border: 1px solid var(--line); border-radius: 13px; padding: 12px 15px; background: #fbfcf9; }
+    details + details { margin-top: 9px; }
+    summary { font-size: 13px; font-weight: 800; cursor: pointer; }
+    details[open] summary { margin-bottom: 9px; }
+    .divider { height: 1px; background: var(--line); margin: 18px 0; }
+    footer.page-foot { padding: 0 clamp(16px, 3vw, 30px) 26px; width: 100%; max-width: 1020px; margin: 0 auto; }
+
+    /* ---------- toast ---------- */
+    .toast {
+      position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+      max-width: min(560px, calc(100vw - 28px)); z-index: 70;
+      padding: 12px 16px; border-radius: 13px; font-size: 12.5px; font-weight: 700; line-height: 1.5;
+      background: var(--forest); color: #eef2ea; border: 1px solid #0f1e1c;
+      box-shadow: 0 18px 44px rgba(15, 32, 27, .32);
+    }
+    .toast.is-warn { background: #fff6e6; color: #7d5420; border-color: #f0dfba; }
+    .toast.is-error { background: var(--rose); color: #8d4030; border-color: #f0d6cb; }
+
+    /* ---------- modal ---------- */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(19, 34, 31, .5); backdrop-filter: blur(3px);
+      display: flex; align-items: flex-start; justify-content: center; padding: clamp(10px, 4vh, 42px) 14px;
+      overflow: auto; z-index: 60;
+    }
+    .modal {
+      width: min(760px, 100%); background: var(--white); border-radius: 20px;
+      box-shadow: 0 30px 80px rgba(15, 32, 27, .35); overflow: hidden;
+    }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 20px; background: var(--forest); color: #eef2ea; }
+    .modal-head h2 { margin: 0; font-size: 17px; }
+    .modal-head small { display: block; color: #a7bdb2; font-size: 11px; font-weight: 600; margin-top: 4px; }
+    .modal-body { padding: 20px; max-height: min(72vh, 720px); overflow: auto; }
+    .modal-close { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); color: #eef2ea; border-radius: 9px; min-height: 36px; padding: 6px 11px; font-size: 12px; font-weight: 800; }
+    .modal-close:hover { background: rgba(255,255,255,.2); }
+    .section-title { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; color: #5b7a63; margin: 22px 0 11px; }
+    .section-title:first-child { margin-top: 0; }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+    @media (max-width: 720px) {
+      .brand-sub { display: none; }
+      .status { order: 3; width: 100%; max-width: none; }
+      .topbar-right { width: 100%; }
+      .tbtn .label { display: none; }
+      .tbtn { padding: 8px 10px; }
+      .tbtn-lime .label { display: inline; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l4.5-11 3.5 7.4L14.5 11 20 19z"/></svg>
+      </span>
+      <span>
+        <span class="brand-name">Lesson Grader</span>
+        <span class="brand-sub">GitHub launcher</span>
+      </span>
+    </span>
+    <div class="topbar-right">
+      <span id="status" class="status" data-state="idle" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-label" class="status-label">Not connected yet</span>
+      </span>
+      <button type="button" id="btn-reload" class="tbtn" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        <span class="label">Reload app</span>
+      </button>
+      <a id="btn-open" class="tbtn" href="#" target="_blank" rel="noopener noreferrer" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+        <span class="label">Open in tab</span>
+      </a>
+      <button type="button" id="btn-settings" class="tbtn tbtn-lime">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 7 2.6h.1A1.7 1.7 0 0 0 8.3 1V1a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 15 2.6a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        <span class="label">Settings</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="mode-page">
+    <!-- ---------- empty state: nothing saved yet ---------- -->
+    <section id="view-setup" class="page" hidden>
+      <div class="card">
+        <div class="eyebrow">One-time setup</div>
+        <h1>Connect your Apps Script deployment</h1>
+        <p class="lead">This page is a plain static file hosted on GitHub. It holds no code about your
+          school, your Drive or your Gemini key — it only remembers <em>where</em> the Lesson Grader
+          web app lives. Paste the deployment address once and it is saved in this browser.</p>
+
+        <form id="setup-form" novalidate>
+          <div class="field">
+            <label for="setup-url">Apps Script web app URL</label>
+            <input id="setup-url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://script.google.com/macros/s/…/exec">
+            <p class="hint">In Apps Script: <strong>Deploy → Manage deployments → ✎ → Web app</strong>, then copy the
+              <strong>Web app URL</strong> that ends in <code>/exec</code>.</p>
+          </div>
+          <div class="field">
+            <label for="setup-label">Label <span class="muted">(optional)</span></label>
+            <input id="setup-label" name="label" type="text" maxlength="60" autocomplete="off" placeholder="Live — Dan's deployment">
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn btn-dark">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+              Save &amp; connect
+            </button>
+            <button type="button" id="setup-help" class="btn btn-ghost">Where do I find this?</button>
+          </div>
+          <div id="setup-flash" class="flash flash-error" role="alert" hidden></div>
+        </form>
+
+        <div class="divider"></div>
+        <div class="note">
+          <strong>Permissions stay in Apps Script.</strong> The embedded app is your real deployment: it runs as the
+          teacher who is signed in, checks <code>LESSON_GRADER_ALLOWED_EMAILS</code> in Script Properties, and keeps
+          the Gemini key server-side. Nothing about access control lives in this page.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Already have a saved connection?</h2>
+        <ul id="setup-connections" class="conn-list"></ul>
+        <p id="setup-empty" class="tiny muted">No saved connections in this browser yet.</p>
+      </div>
+    </section>
+
+    <!-- ---------- embedded app ---------- -->
+    <section id="view-embed" hidden>
+      <div class="frame-bar">
+        <span class="pill" id="frame-pill">Embedded</span>
+        <span class="muted">Running from</span>
+        <code id="frame-url">—</code>
+        <span class="muted tiny" id="frame-note"></span>
+        <button type="button" id="frame-tab" class="btn btn-sm btn-ghost" style="margin-left:auto">
+          Frame blank or looping on sign-in? Open in a tab
+        </button>
+      </div>
+      <div class="frame-wrap">
+        <!-- No sandbox attribute: the Apps Script app needs its own nested
+             sandbox frame plus Google sign-in pop-ups to work. -->
+        <iframe id="app-frame" title="Lesson Grader — Apps Script web app" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </div>
+    </section>
+
+    <!-- ---------- open-in-tab mode / diagnostics ---------- -->
+    <section id="view-open" class="page" hidden>
+      <div class="card open-card">
+        <div class="card-head">
+          <div>
+            <div class="eyebrow">Ready</div>
+            <h1>Open Lesson Grader</h1>
+            <p class="lead">You have chosen to open the app in its own tab. That is the most reliable option in
+              browsers that block third-party cookies (Safari, and Chrome with strict tracking protection).</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a id="open-big" class="btn btn-lime" href="#" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+            Open Lesson Grader
+          </a>
+          <button type="button" id="open-embed" class="btn">Embed it here instead</button>
+        </div>
+        <div class="divider"></div>
+        <dl id="open-details" class="tiny muted" style="margin:0"></dl>
+      </div>
+      <div id="help-open"></div>
+    </section>
+
+    <!-- ---------- help ---------- -->
+    <section id="view-help" class="page" hidden>
+      <div id="help-blocks"></div>
+      <footer class="page-foot">
+        <p class="tiny muted">Saved in this browser only (localStorage). This page never receives your Google password,
+          the allowlist or the Gemini API key. Source: <code>dangeoghegan/lesson-grader-gas</code> → <code>site/index.html</code>.</p>
+      </footer>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- ---------- settings ---------- -->
+  <div id="settings-backdrop" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" id="settings-dialog">
+      <div class="modal-head">
+        <div>
+          <h2 id="settings-title">Launcher settings</h2>
+          <small>Stored in this browser only — no secrets, no code changes in GitHub</small>
+        </div>
+        <button type="button" id="settings-close" class="modal-close">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="section-title">Apps Script web app URL</div>
+        <form id="conn-form" novalidate>
+          <input type="hidden" id="conn-id" value="">
+          <div class="field">
+            <label for="conn-url">Deployment address</label>
+            <input id="conn-url" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+                   placeholder="https://script.google.com/macros/s/…/exec">
+            <p class="hint">Updating an existing connection keeps its label. Paste a new address any time the
+              deployment changes — nothing in this file needs editing.</p>
+          </div>
+          <div class="field">
+            <label for="conn-label">Label</label>
+            <input id="conn-label" type="text" maxlength="60" autocomplete="off" placeholder="Live — Dan's deployment">
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn btn-dark" id="conn-save">Save connection</button>
+            <button type="button" class="btn btn-ghost" id="conn-reset">Clear the fields</button>
+          </div>
+          <div id="conn-flash" class="flash flash-error" role="alert" hidden></div>
+        </form>
+
+        <div class="section-title">Saved connections</div>
+        <ul id="conn-list" class="conn-list"></ul>
+        <p id="conn-empty" class="tiny muted">Nothing saved yet.</p>
+
+        <div class="section-title">Active connection</div>
+        <div id="active-box" class="note">No active connection.</div>
+        <div class="actions" style="margin-top:11px">
+          <button type="button" class="btn btn-sm" id="active-test">Test connection</button>
+          <button type="button" class="btn btn-sm" id="active-copy">Copy address</button>
+          <button type="button" class="btn btn-sm btn-danger" id="active-delete">Delete</button>
+        </div>
+        <div id="active-flash" class="flash" hidden></div>
+
+        <div class="section-title">How the app opens</div>
+        <div class="choice">
+          <input type="radio" name="open-mode" id="mode-embed" value="embed">
+          <label for="mode-embed">
+            <strong>Embed inside this page</strong>
+            <span>The Apps Script app runs in a frame below this bar. Fastest to use; needs Google cookies to be
+              allowed for embedded content.</span>
+          </label>
+        </div>
+        <div class="choice">
+          <input type="radio" name="open-mode" id="mode-tab" value="tab">
+          <label for="mode-tab">
+            <strong>Always open in a new tab</strong>
+            <span>Recommended if the embedded app shows a Google sign-in loop or a blank frame. Sign-in works as a
+              first-party page.</span>
+          </label>
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="pref-probe">
+          <label for="pref-probe">
+            <strong>Check the connection when this page loads</strong>
+            <span>Asks your deployment a read-only question: is it alive, and is the signed-in account allowlisted?
+              No student data is requested or sent.</span>
+          </label>
+        </div>
+
+        <div class="section-title">Move these settings</div>
+        <div class="actions">
+          <button type="button" class="btn btn-sm" id="data-export">Export JSON</button>
+          <button type="button" class="btn btn-sm" id="data-link">Copy share link</button>
+          <label class="btn btn-sm btn-ghost" for="data-import">Import JSON
+            <input id="data-import" type="file" accept="application/json,.json" class="sr-only">
+          </label>
+        </div>
+        <p class="hint">The exported file and the share link contain only deployment addresses and labels — never a
+          key, password or student record. Check any address before opening a link someone else sent you.</p>
+
+        <div class="section-title">Reset</div>
+        <div class="actions">
+          <button type="button" class="btn btn-sm btn-danger" id="data-clear">Clear everything saved in this browser</button>
+        </div>
+        <p class="hint">Clearing removes saved addresses and preferences here. It does not change Apps Script,
+          Drive, Sheets or Classroom.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    /* ------------------------------------------------------------------ *
+     * Constants. Note what is deliberately absent: no deployment URL.
+     * ------------------------------------------------------------------ */
+    var STORAGE_KEY = 'lessonGrader.launcher.v1';
+    var SCHEMA = 1;
+    var PROBE_PARAM = 'lgapi';
+    var PROBE_TIMEOUT_MS = 12000;
+    var FETCH_TIMEOUT_MS = 8000;
+    /* Cross-origin script loading is only ever offered to Google's own Apps
+       Script hosts, so a pasted address cannot be used to execute code from
+       anywhere else on this page. */
+    var TRUSTED_HOSTS = ['script.google.com', 'script.googleusercontent.com'];
+    var DEPLOYMENT_PATH = /^\/(?:a\/)?macros\/s\/[A-Za-z0-9_-]+\/(?:exec|dev)\/?$/;
+    var RESERVED_PARAMS = [PROBE_PARAM, 'callback', '_'];
+
+    var state = {
+      settings: null,
+      status: { state: 'idle', label: 'Not connected yet', detail: '' },
+      probeInFlight: false
+    };
+
+    var el = {};
+    ['main', 'status', 'status-label', 'btn-settings', 'btn-open', 'btn-reload',
+      'view-setup', 'view-embed', 'view-open', 'view-help',
+      'setup-form', 'setup-url', 'setup-label', 'setup-flash', 'setup-help',
+      'setup-connections', 'setup-empty',
+      'app-frame', 'frame-url', 'frame-pill', 'frame-note', 'frame-tab',
+      'open-big', 'open-embed', 'open-details', 'help-open', 'help-blocks',
+      'settings-backdrop', 'settings-dialog', 'settings-close',
+      'conn-form', 'conn-id', 'conn-url', 'conn-label', 'conn-save', 'conn-reset',
+      'conn-flash', 'conn-list', 'conn-empty',
+      'active-box', 'active-test', 'active-copy', 'active-delete', 'active-flash',
+      'mode-embed', 'mode-tab', 'pref-probe',
+      'data-export', 'data-link', 'data-import', 'data-clear', 'toast'
+    ].forEach(function (id) {
+      el[id] = document.getElementById(id);
+    });
+
+    /* ------------------------------------------------------------------ *
+     * URL handling
+     * ------------------------------------------------------------------ */
+    function parseUrl(raw) {
+      var value = String(raw || '').trim();
+      if (!value) return null;
+      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = 'https://' + value;
+      try { return new URL(value); } catch (err) { return null; }
+    }
+
+    /* Returns { ok, value, parsed, warning?, error? } — the single gate every
+       address passes through before it is stored or requested. */
+    function normaliseUrl(raw) {
+      var parsed = parseUrl(raw);
+      if (!parsed) return { ok: false, error: 'That is not a web address. Copy the URL from Apps Script → Manage deployments.' };
+      if (parsed.protocol !== 'https:') return { ok: false, error: 'Use the https:// address copied from Apps Script.' };
+      var path = parsed.pathname.replace(/\/+$/, '');
+      if (!DEPLOYMENT_PATH.test(path)) {
+        return { ok: false, error: 'A Lesson Grader deployment looks like https://script.google.com/macros/s/…/exec' };
+      }
+      var clean = new URL(parsed.origin + path);
+      parsed.searchParams.forEach(function (value, key) {
+        if (RESERVED_PARAMS.indexOf(key) === -1) clean.searchParams.set(key, value);
+      });
+      var result = { ok: true, value: clean.toString(), parsed: clean };
+      if (/\/dev\/?$/.test(path)) {
+        result.warning = 'That is a /dev development address. It only works for you, changes whenever the script is edited, and will not work for colleagues. Prefer the /exec deployment address.';
+      }
+      if (!isTrustedHost(clean)) {
+        result.warning = (result.warning ? result.warning + ' ' : '') +
+          'This host is not script.google.com, so the connection test will be skipped and the app opens in a new tab only.';
+      }
+      return result;
+    }
+
+    function isTrustedHost(parsed) {
+      return TRUSTED_HOSTS.indexOf(String(parsed && parsed.hostname || '').toLowerCase()) !== -1;
+    }
+
+    function defaultLabel(url) {
+      var parsed = parseUrl(url);
+      if (!parsed) return 'Lesson Grader';
+      return /\/dev\/?$/.test(parsed.pathname) ? 'Development deployment' : 'Lesson Grader deployment';
+    }
+
+    function probeUrl(url, callbackName) {
+      var parsed = parseUrl(url);
+      if (!parsed) return '';
+      parsed.searchParams.set(PROBE_PARAM, 'status');
+      if (callbackName) parsed.searchParams.set('callback', callbackName);
+      parsed.searchParams.set('_', String(Date.now()));
+      return parsed.toString();
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Storage — localStorage only, and only addresses/labels/preferences.
+     * ------------------------------------------------------------------ */
+    function emptySettings() {
+      return { schema: SCHEMA, connections: [], activeId: '', prefs: { openMode: 'embed', autoProbe: true } };
+    }
+
+    function storage() {
+      try {
+        var test = '__lg_probe__';
+        window.localStorage.setItem(test, '1');
+        window.localStorage.removeItem(test);
+        return window.localStorage;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function sanitiseSettings(input) {
+      var settings = emptySettings();
+      if (!input || typeof input !== 'object') return settings;
+      var list = Array.isArray(input.connections) ? input.connections : [];
+      list.forEach(function (item, index) {
+        if (!item || typeof item !== 'object') return;
+        var url = normaliseUrl(item.url);
+        if (!url.ok) return;
+        var id = String(item.id || 'conn-' + (index + 1) + '-' + Math.random().toString(36).slice(2, 7));
+        if (settings.connections.some(function (existing) { return existing.id === id || existing.url === url.value; })) return;
+        settings.connections.push({
+          id: id,
+          label: String(item.label || '').trim().slice(0, 60) || defaultLabel(url.value),
+          url: url.value,
+          addedAt: Number(item.addedAt) || Date.now(),
+          lastUsedAt: Number(item.lastUsedAt) || 0
+        });
+      });
+      var active = settings.connections.filter(function (item) { return item.id === String(input.activeId || ''); })[0];
+      settings.activeId = active ? active.id : (settings.connections[0] ? settings.connections[0].id : '');
+      var prefs = input.prefs || {};
+      settings.prefs.openMode = prefs.openMode === 'tab' ? 'tab' : 'embed';
+      settings.prefs.autoProbe = prefs.autoProbe !== false && prefs.autoProbe !== 'false';
+      return settings;
+    }
+
+    function loadSettings() {
+      var store = storage();
+      if (!store) return emptySettings();
+      var raw = null;
+      try { raw = store.getItem(STORAGE_KEY); } catch (err) { raw = null; }
+      if (!raw) return emptySettings();
+      try { return sanitiseSettings(JSON.parse(raw)); } catch (err) { return emptySettings(); }
+    }
+
+    function saveSettings() {
+      var store = storage();
+      if (!store) return false;
+      try {
+        store.setItem(STORAGE_KEY, JSON.stringify(state.settings));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function activeConnection() {
+      var settings = state.settings;
+      if (!settings) return null;
+      return settings.connections.filter(function (item) { return item.id === settings.activeId; })[0] || null;
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Connection check. Tries a normal cross-origin GET first (works if the
+     * deployment ever answers with CORS headers), then falls back to JSONP,
+     * which Apps Script supports without CORS. Both are read-only.
+     * ------------------------------------------------------------------ */
+    function describeProbe(body) {
+      if (!body || typeof body !== 'object') {
+        return { state: 'unreachable', label: 'No readable answer', detail: 'The address answered but not as a Lesson Grader probe. Check that it is the /exec web app URL.' };
+      }
+      if (body.success === false) {
+        return { state: 'rejected', label: 'Probe refused', detail: body.message || 'The deployment answered, but refused the request.' };
+      }
+      var data = body.data || {};
+      if (data.authorised) {
+        var who = data.account ? ' Signed in as ' + data.account + '.' : '';
+        return { state: 'connected', label: 'Connected', detail: 'Deployment answered and this account is allowlisted.' + who + (data.keyConfigured ? ' Gemini key configured.' : ' Gemini key not configured yet.') };
+      }
+      if (!data.accountDetected) {
+        return { state: 'anonymous', label: 'No Google account seen', detail: 'Sign in to Google in this browser, or this browser is blocking Google cookies for pages like this one. The app may still work when opened in its own tab.' };
+      }
+      var allowlist = data.allowlistConfigured ? 'is not in LESSON_GRADER_ALLOWED_EMAILS' : 'the allowlist Script Property is empty';
+      return { state: 'denied', label: 'Not allowlisted', detail: (data.account || 'This account') + ' ' + allowlist + '. Add it in Apps Script → Project settings → Script properties.' };
+    }
+
+    function probeViaFetch(url) {
+      if (typeof window.fetch !== 'function' || typeof window.AbortController !== 'function') {
+        return Promise.reject(new Error('fetch unavailable'));
+      }
+      var controller = new window.AbortController();
+      var timer = window.setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS);
+      return window.fetch(probeUrl(url, ''), {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        signal: controller.signal
+      }).then(function (response) {
+        window.clearTimeout(timer);
+        if (!response || !response.ok) throw new Error('HTTP ' + (response ? response.status : 'no response'));
+        return response.json();
+      }).then(function (body) {
+        return describeProbe(body);
+      });
+    }
+
+    function probeViaJsonp(url) {
+      return new Promise(function (resolve, reject) {
+        var name = 'lgProbe_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+        var script = document.createElement('script');
+        var settled = false;
+        var timer = window.setTimeout(function () {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error('timeout'));
+        }, PROBE_TIMEOUT_MS);
+        function cleanup() {
+          window.clearTimeout(timer);
+          try { delete window[name]; } catch (err) { window[name] = undefined; }
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
+        window[name] = function (body) {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(describeProbe(body));
+        };
+        script.async = true;
+        script.onerror = function () {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(new Error('network'));
+        };
+        script.onload = function () {
+          window.setTimeout(function () {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error('unexpected response'));
+          }, 0);
+        };
+        script.src = probeUrl(url, name);
+        (document.head || document.documentElement).appendChild(script);
+      });
+    }
+
+    function probe(url) {
+      var target = normaliseUrl(url);
+      if (!target.ok) return Promise.resolve({ state: 'invalid', label: 'Invalid address', detail: target.error });
+      if (!isTrustedHost(target.parsed)) {
+        return Promise.resolve({ state: 'unchecked', label: 'Test skipped', detail: 'Connection checks are only sent to script.google.com deployments.' });
+      }
+      return probeViaFetch(target.value).catch(function () {
+        return probeViaJsonp(target.value);
+      }).catch(function (err) {
+        return {
+          state: 'unreachable',
+          label: 'Not reachable from here',
+          detail: 'No answer within ' + Math.round(PROBE_TIMEOUT_MS / 1000) + 's (' + (err && err.message || 'error') + '). The app may still open in its own tab — try that before assuming the deployment is down.'
+        };
+      });
+    }
+
+    function runProbe(connection) {
+      if (!connection || state.probeInFlight) return Promise.resolve(null);
+      state.probeInFlight = true;
+      setStatus({ state: 'checking', label: 'Checking connection…', detail: '' });
+      return probe(connection.url).then(function (result) {
+        state.probeInFlight = false;
+        setStatus(result);
+        return result;
+      });
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Rendering
+     * ------------------------------------------------------------------ */
+    function setStatus(status) {
+      state.status = status;
+      el.status.setAttribute('data-state', status.state);
+      el['status-label'].textContent = status.label;
+      el.status.title = status.detail || status.label;
+    }
+
+    function renderConnections(listEl, emptyEl, interactive) {
+      listEl.innerHTML = '';
+      var connections = state.settings.connections;
+      emptyEl.hidden = connections.length > 0;
+      connections.forEach(function (connection) {
+        var isActive = connection.id === state.settings.activeId;
+        var item = document.createElement('li');
+        item.className = 'conn' + (isActive ? ' is-active' : '');
+        var main = document.createElement('div');
+        main.className = 'conn-main';
+        var label = document.createElement('div');
+        label.className = 'conn-label';
+        label.textContent = connection.label;
+        if (isActive) {
+          var pill = document.createElement('span');
+          pill.className = 'pill';
+          pill.textContent = 'Active';
+          label.appendChild(pill);
+        }
+        if (/\/dev\/?$/.test(parseUrl(connection.url).pathname)) {
+          var dev = document.createElement('span');
+          dev.className = 'pill pill-warn';
+          dev.textContent = 'dev';
+          label.appendChild(dev);
+        }
+        var url = document.createElement('div');
+        url.className = 'conn-url';
+        url.textContent = connection.url;
+        main.appendChild(label);
+        main.appendChild(url);
+        item.appendChild(main);
+        if (interactive) {
+          var actions = document.createElement('div');
+          actions.className = 'actions';
+          if (!isActive) {
+            var use = document.createElement('button');
+            use.type = 'button';
+            use.className = 'btn btn-sm';
+            use.textContent = 'Use';
+            use.addEventListener('click', function () { activate(connection.id); });
+            actions.appendChild(use);
+          }
+          var edit = document.createElement('button');
+          edit.type = 'button';
+          edit.className = 'btn btn-sm btn-ghost';
+          edit.textContent = 'Edit';
+          edit.addEventListener('click', function () { fillForm(connection); });
+          actions.appendChild(edit);
+          var remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'btn btn-sm btn-danger';
+          remove.textContent = 'Delete';
+          remove.addEventListener('click', function () { removeConnection(connection.id); });
+          actions.appendChild(remove);
+          item.appendChild(actions);
+        } else {
+          var open = document.createElement('div');
+          open.className = 'actions';
+          var use2 = document.createElement('button');
+          use2.type = 'button';
+          use2.className = 'btn btn-sm';
+          use2.textContent = 'Connect to this';
+          use2.addEventListener('click', function () { activate(connection.id); });
+          open.appendChild(use2);
+          item.appendChild(open);
+        }
+        listEl.appendChild(item);
+      });
+    }
+
+    function renderActive() {
+      var connection = activeConnection();
+      var flash = el['active-flash'];
+      flash.hidden = true;
+      flash.textContent = '';
+      ['active-test', 'active-copy', 'active-delete'].forEach(function (id) { el[id].disabled = !connection; });
+      if (!connection) {
+        el['active-box'].textContent = 'No active connection. Save a deployment address above.';
+        return;
+      }
+      el['active-box'].innerHTML = '';
+      var strong = document.createElement('strong');
+      strong.textContent = connection.label + ' ';
+      var code = document.createElement('code');
+      code.textContent = connection.url;
+      el['active-box'].appendChild(strong);
+      el['active-box'].appendChild(code);
+      var meta = document.createElement('div');
+      meta.className = 'tiny muted';
+      meta.style.marginTop = '6px';
+      var parsed = parseUrl(connection.url);
+      meta.textContent = (/\/dev\/?$/.test(parsed.pathname) ? 'Development address' : 'Deployed web app') +
+        (connection.lastUsedAt ? ' · last opened ' + new Date(connection.lastUsedAt).toLocaleString() : ' · never opened');
+      el['active-box'].appendChild(meta);
+    }
+
+    function renderViews() {
+      var connection = activeConnection();
+      var embedMode = state.settings.prefs.openMode === 'embed' && !!connection && isTrustedHost(parseUrl(connection.url));
+      var viewSetup = !connection;
+      el['view-setup'].hidden = !viewSetup;
+      el['view-embed'].hidden = viewSetup || !embedMode;
+      el['view-open'].hidden = viewSetup || embedMode;
+      el['view-help'].hidden = !viewSetup && embedMode;
+      el.main.className = (!viewSetup && embedMode) ? 'mode-embed' : 'mode-page';
+      el['btn-reload'].hidden = viewSetup || !embedMode;
+      el['btn-open'].hidden = viewSetup;
+      el['mode-embed'].checked = state.settings.prefs.openMode !== 'tab';
+      el['mode-tab'].checked = state.settings.prefs.openMode === 'tab';
+      el['pref-probe'].checked = !!state.settings.prefs.autoProbe;
+
+      if (viewSetup) {
+        renderConnections(el['setup-connections'], el['setup-empty'], false);
+        unloadFrame();
+        setStatus(connection ? state.status : { state: 'idle', label: 'Not connected yet', detail: 'Save your Apps Script web app URL to get started.' });
+        return;
+      }
+
+      el['btn-open'].href = connection.url;
+      el['open-big'].href = connection.url;
+      if (embedMode) {
+        el['frame-url'].textContent = connection.url;
+        el['frame-note'].textContent = state.status.detail || '';
+        mountFrame(connection.url);
+      } else {
+        unloadFrame();
+        el['open-details'].innerHTML = '';
+        [['Deployment', connection.label], ['Address', connection.url], ['Opening', 'New browser tab (your preference)']]
+          .forEach(function (pair) {
+            var row = document.createElement('div');
+            var key = document.createElement('strong');
+            key.textContent = pair[0] + ': ';
+            row.appendChild(key);
+            row.appendChild(document.createTextNode(pair[1]));
+            el['open-details'].appendChild(row);
+          });
+      }
+      renderConnections(el['setup-connections'], el['setup-empty'], false);
+    }
+
+    function render() {
+      renderViews();
+      renderConnections(el['conn-list'], el['conn-empty'], true);
+      renderActive();
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Frame handling
+     * ------------------------------------------------------------------ */
+    var mountedUrl = '';
+    function mountFrame(url) {
+      if (mountedUrl === url) return;
+      el['app-frame'].setAttribute('src', url);
+      mountedUrl = url;
+      touchActive();
+    }
+
+    function unloadFrame() {
+      el['app-frame'].removeAttribute('src');
+      mountedUrl = '';
+    }
+
+    function reloadFrame() {
+      var connection = activeConnection();
+      if (!connection) return;
+      mountedUrl = '';
+      mountFrame(connection.url + (connection.url.indexOf('?') === -1 ? '?' : '&') + 'lgr=' + Date.now());
+    }
+
+    function touchActive() {
+      var connection = activeConnection();
+      if (!connection) return;
+      connection.lastUsedAt = Date.now();
+      saveSettings();
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Mutations
+     * ------------------------------------------------------------------ */
+    function upsertConnection(rawUrl, rawLabel, existingId) {
+      var target = normaliseUrl(rawUrl);
+      if (!target.ok) return { ok: false, error: target.error };
+      var connections = state.settings.connections;
+      var existing = existingId ? connections.filter(function (item) { return item.id === existingId; })[0] : null;
+      var clash = connections.filter(function (item) { return item.url === target.value && (!existing || item.id !== existing.id); })[0];
+      if (clash) return { ok: false, error: 'That address is already saved as “' + clash.label + '”. Use it from the list below.' };
+      var label = String(rawLabel || '').trim().slice(0, 60);
+      if (existing) {
+        existing.url = target.value;
+        if (label) existing.label = label;
+        state.settings.activeId = existing.id;
+      } else {
+        var id = 'conn-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+        connections.push({ id: id, label: label || defaultLabel(target.value), url: target.value, addedAt: Date.now(), lastUsedAt: 0 });
+        state.settings.activeId = id;
+      }
+      var saved = saveSettings();
+      render();
+      return { ok: true, warning: target.warning, stored: saved, connection: activeConnection() };
+    }
+
+    function activate(id) {
+      var match = state.settings.connections.filter(function (item) { return item.id === id; })[0];
+      if (!match) return;
+      state.settings.activeId = id;
+      mountedUrl = '';
+      saveSettings();
+      render();
+      closeSettings();
+      if (state.settings.prefs.autoProbe) runProbe(match);
+      else setStatus({ state: 'idle', label: match.label, detail: 'Connection check is turned off in Settings.' });
+    }
+
+    function removeConnection(id) {
+      var wasActive = state.settings.activeId === id;
+      state.settings.connections = state.settings.connections.filter(function (item) { return item.id !== id; });
+      if (wasActive) {
+        state.settings.activeId = state.settings.connections.length ? state.settings.connections[0].id : '';
+        mountedUrl = '';
+      }
+      saveSettings();
+      render();
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Settings dialog
+     * ------------------------------------------------------------------ */
+    var lastFocused = null;
+    function openSettings(focusId) {
+      lastFocused = document.activeElement;
+      fillForm(null);
+      render();
+      el['settings-backdrop'].hidden = false;
+      document.body.style.overflow = 'hidden';
+      var target = focusId ? el[focusId] : el['conn-url'];
+      window.setTimeout(function () { if (target) target.focus(); }, 20);
+    }
+
+    function closeSettings() {
+      if (el['settings-backdrop'].hidden) return;
+      el['settings-backdrop'].hidden = true;
+      document.body.style.overflow = '';
+      if (lastFocused && lastFocused.focus) lastFocused.focus();
+    }
+
+    function trapFocus(event) {
+      if (event.key !== 'Tab') return;
+      var nodes = el['settings-dialog'].querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      var focusable = Array.prototype.filter.call(nodes, function (node) { return !node.disabled && node.offsetParent !== null; });
+      if (!focusable.length) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+
+    function fillForm(connection) {
+      el['conn-id'].value = connection ? connection.id : '';
+      el['conn-url'].value = connection ? connection.url : '';
+      el['conn-label'].value = connection ? connection.label : '';
+      el['conn-save'].textContent = connection ? 'Update connection' : 'Save connection';
+      el['conn-flash'].hidden = true;
+    }
+
+    function showFlash(node, message, ok) {
+      node.textContent = message;
+      node.className = 'flash ' + (ok ? 'flash-ok' : 'flash-error');
+      node.hidden = !message;
+    }
+
+    /* Toasts work in every view, including over the embedded app. */
+    var toastTimer = null;
+    function showToast(message, kind) {
+      if (!el.toast) return;
+      el.toast.textContent = message;
+      el.toast.className = 'toast' + (kind ? ' is-' + kind : '');
+      el.toast.hidden = !message;
+      window.clearTimeout(toastTimer);
+      if (message) toastTimer = window.setTimeout(function () { el.toast.hidden = true; }, 9000);
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Import / export
+     * ------------------------------------------------------------------ */
+    function exportSettings() {
+      var payload = JSON.stringify(state.settings, null, 2);
+      try {
+        if (typeof window.URL === 'function' && window.URL.createObjectURL && typeof window.Blob === 'function') {
+          var blob = new window.Blob([payload], { type: 'application/json' });
+          var link = document.createElement('a');
+          link.href = window.URL.createObjectURL(blob);
+          link.download = 'lesson-grader-launcher-settings.json';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(link.href);
+          return;
+        }
+      } catch (err) { /* fall through to prompt */ }
+      window.prompt('Copy these settings:', payload);
+    }
+
+    function importSettings(text) {
+      var parsed;
+      try { parsed = JSON.parse(text); } catch (err) { return { ok: false, error: 'That file is not valid JSON.' }; }
+      if (parsed && parsed.url && !parsed.connections) parsed = { connections: [parsed] };
+      var settings = sanitiseSettings(parsed);
+      if (!settings.connections.length) return { ok: false, error: 'No usable deployment address was found in that file.' };
+      state.settings = settings;
+      var saved = saveSettings();
+      mountedUrl = '';
+      render();
+      return { ok: true, count: settings.connections.length, stored: saved };
+    }
+
+    function shareLink() {
+      var connection = activeConnection();
+      if (!connection) return '';
+      var url = new URL(window.location.href);
+      url.searchParams.set('gas', connection.url);
+      url.searchParams.set('label', connection.label);
+      return url.toString();
+    }
+
+    function copyText(text, done) {
+      if (!text) return;
+      if (window.navigator && window.navigator.clipboard && window.navigator.clipboard.writeText) {
+        window.navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+        return;
+      }
+      try {
+        var field = document.createElement('textarea');
+        field.value = text;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(field);
+        done(ok);
+      } catch (err) { done(false); }
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Help content (kept in JS so the page stays a single file)
+     * ------------------------------------------------------------------ */
+    function helpBlocks() {
+      return [
+        {
+          title: 'Where the address comes from',
+          body: 'Apps Script → <strong>Deploy → Manage deployments</strong> → pencil icon → type <strong>Web app</strong> → copy the <strong>Web app URL</strong>. It ends in <code>/exec</code>. Publishing a <em>new version</em> of the same deployment keeps that address, so this page needs no change when you update the script.'
+        },
+        {
+          title: 'The embedded frame is blank, or loops on Google sign-in',
+          body: 'Your browser is refusing Google cookies inside an embedded page (Safari always does; Chrome does it with strict tracking protection). Fix: Settings → <strong>Always open in a new tab</strong>, or use the <strong>Open in tab</strong> button. Nothing is wrong with the deployment.'
+        },
+        {
+          title: '“Access denied” inside the app',
+          body: 'That message comes from Apps Script, not from this page. Add the teacher’s exact school address to <code>LESSON_GRADER_ALLOWED_EMAILS</code> in <strong>Project settings → Script properties</strong>, then reload. An empty property denies everyone on purpose.'
+        },
+        {
+          title: 'Changing the deployment',
+          body: 'Paste the new address in Settings and save — it replaces the old one in this browser. Old saved connections stay listed until you delete them, so a testing deployment and the live one can sit side by side.'
+        },
+        {
+          title: 'What this page can and cannot do',
+          body: 'It stores addresses and preferences in this browser, opens your deployment, and asks it one read-only question. Grading, Classroom, Drive, Sheets and the Gemini key all stay inside the Apps Script deployment and its permissions. This page has no access to student data.'
+        }
+      ];
+    }
+
+    function renderHelp() {
+      [el['help-blocks'], el['help-open']].forEach(function (host) {
+        if (!host || host.childElementCount) return;
+        helpBlocks().forEach(function (block) {
+          var details = document.createElement('details');
+          var summary = document.createElement('summary');
+          summary.textContent = block.title;
+          var body = document.createElement('p');
+          body.className = 'tiny muted';
+          body.innerHTML = block.body;
+          details.appendChild(summary);
+          details.appendChild(body);
+          host.appendChild(details);
+        });
+      });
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Startup
+     * ------------------------------------------------------------------ */
+    /* A shared link may carry ?gas=<deployment address>. It is never saved
+       silently: the address is prefilled and the teacher confirms it. */
+    function applyLinkParameters() {
+      var params;
+      try { params = new URLSearchParams(window.location.search); } catch (err) { return null; }
+      var candidate = params.get('gas');
+      if (!candidate) return null;
+      var label = String(params.get('label') || '').slice(0, 60);
+      var target = normaliseUrl(candidate);
+      params.delete('gas');
+      params.delete('label');
+      var rest = params.toString();
+      try {
+        window.history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : '') + window.location.hash);
+      } catch (err) { /* file:// or restricted history */ }
+      return { ok: target.ok, url: target.ok ? target.value : candidate, label: label, error: target.ok ? '' : target.error };
+    }
+
+    function announceLinkedUrl(linked) {
+      var message = linked.ok
+        ? 'This link supplied a deployment address. Check it matches your own Apps Script project before saving it.'
+        : linked.error;
+      el['setup-url'].value = linked.url;
+      if (linked.label) el['setup-label'].value = linked.label;
+      showFlash(el['setup-flash'], message, linked.ok);
+      if (!state.settings.connections.length) return;
+      openSettings('conn-url');
+      el['conn-url'].value = linked.url;
+      if (linked.label) el['conn-label'].value = linked.label;
+      showFlash(el['conn-flash'], message, linked.ok);
+    }
+
+    function start() {
+      state.settings = loadSettings();
+      renderHelp();
+      render();
+
+      var linked = applyLinkParameters();
+      if (linked) announceLinkedUrl(linked);
+
+      var connection = activeConnection();
+      if (connection && state.settings.prefs.autoProbe) runProbe(connection);
+      else if (connection) setStatus({ state: 'idle', label: connection.label, detail: 'Connection check is turned off in Settings.' });
+      else setStatus({ state: 'idle', label: 'Not connected yet', detail: 'Save your Apps Script web app URL to get started.' });
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Events
+     * ------------------------------------------------------------------ */
+    el['setup-form'].addEventListener('submit', function (event) {
+      event.preventDefault();
+      var result = upsertConnection(el['setup-url'].value, el['setup-label'].value, '');
+      if (!result.ok) { showFlash(el['setup-flash'], result.error, false); return; }
+      el['setup-url'].value = '';
+      el['setup-label'].value = '';
+      el['setup-flash'].hidden = true;
+      showToast(result.warning || (result.stored
+        ? 'Saved in this browser. Opening your deployment…'
+        : 'Saved for this session only — this browser is blocking local storage.'), result.warning ? 'warn' : '');
+      if (state.settings.prefs.autoProbe) runProbe(result.connection);
+      else setStatus({ state: 'idle', label: result.connection.label, detail: 'Connection check is turned off in Settings.' });
+    });
+
+    el['setup-help'].addEventListener('click', function () {
+      var target = el['help-blocks'];
+      el['view-help'].hidden = false;
+      if (target && target.firstElementChild) target.firstElementChild.setAttribute('open', '');
+      if (target && target.scrollIntoView) target.scrollIntoView({ block: 'start' });
+    });
+
+    el['conn-form'].addEventListener('submit', function (event) {
+      event.preventDefault();
+      var result = upsertConnection(el['conn-url'].value, el['conn-label'].value, el['conn-id'].value);
+      if (!result.ok) { showFlash(el['conn-flash'], result.error, false); return; }
+      showFlash(el['conn-flash'], (result.warning ? result.warning + ' ' : '') + (result.stored ? 'Saved in this browser.' : 'Saved for this session only — this browser is blocking local storage.'), true);
+      fillForm(null);
+      mountedUrl = '';
+      render();
+      if (state.settings.prefs.autoProbe) runProbe(result.connection);
+    });
+
+    el['conn-reset'].addEventListener('click', function () { fillForm(null); });
+    el['btn-settings'].addEventListener('click', function () { openSettings(); });
+    el['settings-close'].addEventListener('click', closeSettings);
+    el['settings-backdrop'].addEventListener('mousedown', function (event) {
+      if (event.target === el['settings-backdrop']) closeSettings();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (el['settings-backdrop'].hidden) return;
+      if (event.key === 'Escape') { closeSettings(); return; }
+      trapFocus(event);
+    });
+
+    el['btn-reload'].addEventListener('click', reloadFrame);
+    el['frame-tab'].addEventListener('click', function () {
+      state.settings.prefs.openMode = 'tab';
+      saveSettings();
+      render();
+      showToast('Lesson Grader now opens in its own tab. Change it back any time in Settings.');
+    });
+    el['open-embed'].addEventListener('click', function () {
+      state.settings.prefs.openMode = 'embed';
+      saveSettings();
+      render();
+    });
+    [el['mode-embed'], el['mode-tab']].forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        state.settings.prefs.openMode = el['mode-tab'].checked ? 'tab' : 'embed';
+        if (state.settings.prefs.openMode === 'tab') mountedUrl = '';
+        saveSettings();
+        render();
+      });
+    });
+    el['pref-probe'].addEventListener('change', function () {
+      state.settings.prefs.autoProbe = el['pref-probe'].checked;
+      saveSettings();
+      var connection = activeConnection();
+      if (state.settings.prefs.autoProbe && connection) runProbe(connection);
+    });
+
+    el['active-test'].addEventListener('click', function () {
+      var connection = activeConnection();
+      if (!connection) return;
+      el['active-test'].disabled = true;
+      showFlash(el['active-flash'], 'Asking your deployment…', true);
+      runProbe(connection).then(function (result) {
+        el['active-test'].disabled = false;
+        if (!result) return;
+        showFlash(el['active-flash'], result.label + ' — ' + result.detail, result.state === 'connected' || result.state === 'unchecked');
+        el['frame-note'].textContent = result.detail || '';
+      });
+    });
+
+    el['active-copy'].addEventListener('click', function () {
+      var connection = activeConnection();
+      if (!connection) return;
+      copyText(connection.url, function (ok) {
+        showFlash(el['active-flash'], ok ? 'Address copied.' : 'Copy blocked by the browser — select it from the box above.', ok);
+      });
+    });
+
+    el['active-delete'].addEventListener('click', function () {
+      var connection = activeConnection();
+      if (!connection) return;
+      if (!window.confirm('Remove “' + connection.label + '” from this browser? Apps Script is not affected.')) return;
+      removeConnection(connection.id);
+    });
+
+    el['data-export'].addEventListener('click', exportSettings);
+    el['data-link'].addEventListener('click', function () {
+      var link = shareLink();
+      if (!link) { showFlash(el['active-flash'], 'Save a connection first.', false); return; }
+      copyText(link, function (ok) {
+        showFlash(el['active-flash'], ok ? 'Share link copied. It contains the deployment address only — no secrets.' : 'Copy blocked. Open Settings and copy the address instead.', ok);
+      });
+    });
+    el['data-import'].addEventListener('change', function (event) {
+      var file = event.target.files && event.target.files[0];
+      if (!file) return;
+      var reader = new window.FileReader();
+      reader.onload = function () {
+        var result = importSettings(String(reader.result || ''));
+        showFlash(el['active-flash'], result.ok
+          ? 'Imported ' + result.count + ' connection' + (result.count === 1 ? '' : 's') + (result.stored ? '.' : ' (not persisted — local storage is blocked).')
+          : result.error, result.ok);
+      };
+      reader.onerror = function () { showFlash(el['active-flash'], 'That file could not be read.', false); };
+      reader.readAsText(file);
+      event.target.value = '';
+    });
+    el['data-clear'].addEventListener('click', function () {
+      if (!window.confirm('Clear every saved address and preference in this browser?')) return;
+      state.settings = emptySettings();
+      mountedUrl = '';
+      saveSettings();
+      render();
+      setStatus({ state: 'idle', label: 'Not connected yet', detail: 'Saved settings cleared.' });
+    });
+
+    /* Exposed for the repository's jsdom tests; harmless in a browser. */
+    window.LessonGraderLauncher = {
+      STORAGE_KEY: STORAGE_KEY,
+      SCHEMA: SCHEMA,
+      state: state,
+      normaliseUrl: normaliseUrl,
+      isTrustedHost: isTrustedHost,
+      probeUrl: probeUrl,
+      describeProbe: describeProbe,
+      probe: probe,
+      loadSettings: loadSettings,
+      sanitiseSettings: sanitiseSettings,
+      saveSettings: saveSettings,
+      upsertConnection: upsertConnection,
+      activate: activate,
+      removeConnection: removeConnection,
+      importSettings: importSettings,
+      shareLink: shareLink,
+      activeConnection: activeConnection,
+      render: render,
+      mountFrame: mountFrame,
+      mountedUrl: function () { return mountedUrl; },
+      start: start
+    };
+
+    start();
+  })();
+  </script>
+</body>
+</html>

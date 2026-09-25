@@ -34,6 +34,34 @@ var WebAccess = (function () {
     };
   }
 
+  /* Partial address only: the launcher page is hosted outside Google, so the
+     HTTP probe never returns a full email, the allowlist or the key. */
+  function maskEmail(email) {
+    var value = String(email || '').trim();
+    var at = value.lastIndexOf('@');
+    if (at < 1 || at === value.length - 1) return '';
+    return value.slice(0, Math.min(2, at)) + '***@' + value.slice(at + 1);
+  }
+
+  /* Read-only handshake for the GitHub-hosted launcher. It answers "is this
+     deployment alive and is the signed-in teacher allowlisted?" and nothing
+     else. It must never become a general RPC dispatcher. */
+  function probe() {
+    var email = activeEmail();
+    var isAllowed = allowed();
+    return {
+      success: true,
+      data: {
+        app: 'Lesson Grader',
+        authorised: isAllowed,
+        accountDetected: !!email,
+        account: maskEmail(email),
+        keyConfigured: isAllowed && !!PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY'),
+        allowlistConfigured: !!String(PropertiesService.getScriptProperties().getProperty(ALLOWLIST_PROPERTY) || '').trim()
+      }
+    };
+  }
+
   function setKey(value) {
     requireTeacher();
     var key = String(value || '').trim();
@@ -57,7 +85,7 @@ var WebAccess = (function () {
     }
   }
 
-  return { requireTeacher: requireTeacher, status: status, setKey: setKey, testKey: testKey };
+  return { requireTeacher: requireTeacher, status: status, probe: probe, maskEmail: maskEmail, setKey: setKey, testKey: testKey };
 })();
 
 /* This endpoint returns only setup state; never the stored key or allowlist. */
