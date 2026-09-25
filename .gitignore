@@ -3,3 +3,11 @@ node_modules/
 *.sh
 *.js
 !Code.gs
+
+# Local deployment settings and credential files never belong in Git.
+.clasp.json
+.env
+.env.*
+secrets.*
+credentials.*
+.DS_Store
