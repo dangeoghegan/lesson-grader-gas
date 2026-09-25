@@ -1,0 +1,13 @@
+{
+  "name": "lesson-grader-gas",
+  "private": true,
+  "description": "Repository checks and a local UI preview for the Apps Script Lesson Grader",
+  "scripts": {
+    "check": "node scripts/check.cjs",
+    "test": "node --test tests/*.test.cjs",
+    "preview": "node docs/preview.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}

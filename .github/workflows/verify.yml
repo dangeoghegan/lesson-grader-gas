@@ -1,0 +1,17 @@
+name: Verify Apps Script repository
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      # Intentionally no clasp push or deployment. Live projects require
+      # reconciliation and backup with the teacher present.

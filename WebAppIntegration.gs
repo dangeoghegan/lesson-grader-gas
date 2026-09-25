@@ -43,6 +43,7 @@ var LessonGraderWeb = (function () {
     ErrorLog: true,
     ClassLists: true,
     RubricProfiles: true,
+    ApprovedGrades: true,
     Rubric: true,
     Criteria: true,
     Summary: true,
@@ -208,6 +209,27 @@ var LessonGraderWeb = (function () {
     var names = Object.keys(categories);
 
     return names.length === 1 ? names[0] : null;
+  }
+
+  function existingWorkbookId_(stage, courseCode, category, name) {
+    var roots = ownRoots_();
+    while (roots.hasNext()) {
+      var stages = roots.next().getFoldersByName(stage);
+      while (stages.hasNext()) {
+        var courses = stages.next().getFoldersByName(courseCode);
+        while (courses.hasNext()) {
+          var categories = courses.next().getFoldersByName(category);
+          while (categories.hasNext()) {
+            var files = categories.next().getFilesByName(name);
+            while (files.hasNext()) {
+              var file = files.next();
+              if (!file.isTrashed() && file.getMimeType() === MimeType.GOOGLE_SHEETS) return file.getId();
+            }
+          }
+        }
+      }
+    }
+    return '';
   }
 
   function list_() {
@@ -460,6 +482,13 @@ var LessonGraderWeb = (function () {
     }
 
     try {
+      /* The setup helper may reuse an existing workbook and create a task
+         tab. Back it up BEFORE calling that helper, not afterwards. */
+      var expectedName = code + ' [' + yr + '] - ' + task + ' - Grading';
+      var reusableId = existingWorkbookId_(deriveStageFromCourseCode(code), code, category, expectedName);
+      if (reusableId) {
+        DriveApp.getFileById(reusableId).makeCopy('[Backup ' + new Date().toISOString().replace(/[:.]/g, '-') + '] ' + expectedName);
+      }
       var result = apiSubmitGradingWorkbookSetup(
         code,
         category,
@@ -487,14 +516,15 @@ var LessonGraderWeb = (function () {
         );
       }
 
+      /* New files have no assessment history; reused files were backed up
+         before the setup helper ran. */
       initialiseWorkbook_(workbookId);
 
       var ss = open_(workbookId);
-
-      if (taskNames_(ss).indexOf(task) === -1) {
-        throw new Error('Expected task tab is missing: ' + task);
-      }
-
+      if (taskNames_(ss).indexOf(task) === -1) throw new Error('Expected task tab is missing: ' + task);
+      WebGrading.prepare(ss, false);
+      result.message += ' Review and activate a rubric for this task before grading. No rubric was activated automatically.';
+      result.selectedRubricId = result.rubricFileId || '';
       return result;
     } catch (err) {
       console.error(
@@ -1187,6 +1217,12 @@ var LessonGraderWeb = (function () {
     }
   }
 
+  function isSharedRubric_(id) {
+    if (!validId_(id)) return false;
+    var listing = rubrics_();
+    return listing.success && listing.data.some(function (item) { return item.id === id; });
+  }
+
   return {
     list: list_,
     metadata: metadata_,
@@ -1194,24 +1230,31 @@ var LessonGraderWeb = (function () {
     tasks: tasks_,
     create: create_,
     link: link_,
+    open: open_,
+    taskNames: taskNames_,
+    isSharedRubric: isSharedRubric_,
     getTaskAssessmentOverview: getTaskAssessmentOverview_,
     getSubmissionAssessmentDetail: getSubmissionAssessmentDetail_
   };
 })();
 
 function apiWebListCandidateWorkbooks() {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.list();
 }
 
 function apiWebGetWorkbookMetadata(spreadsheetId) {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.metadata(spreadsheetId);
 }
 
 function apiWebListSharedRubrics() {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.rubrics();
 }
 
 function apiWebListWorkbookTasks(spreadsheetId) {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.tasks(spreadsheetId);
 }
 
@@ -1223,6 +1266,7 @@ function apiWebCreateWorkbook(
   rubricName,
   rubricDocument
 ) {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.create(
     courseCode,
     taskName,
@@ -1239,6 +1283,7 @@ function apiWebLinkClassroomAssignment(
   courseId,
   courseWorkId
 ) {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.link(
     spreadsheetId,
     taskName,
@@ -1248,6 +1293,7 @@ function apiWebLinkClassroomAssignment(
 }
 
 function apiWebGetTaskAssessmentOverview(spreadsheetId, taskName) {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.getTaskAssessmentOverview(
     spreadsheetId,
     taskName
@@ -1259,6 +1305,7 @@ function apiWebGetSubmissionAssessmentDetail(
   taskName,
   submissionRecordId
 ) {
+  WebAccess.requireTeacher();
   return LessonGraderWeb.getSubmissionAssessmentDetail(
     spreadsheetId,
     taskName,
