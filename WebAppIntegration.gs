@@ -1313,11 +1313,68 @@ function apiWebGetSubmissionAssessmentDetail(
   );
 }
 
+/* Read-only HTTP handshake for the GitHub Pages launcher (site/index.html).
+ * The launcher cannot use google.script.run, so it needs one tiny cross-origin
+ * answer: "is this deployment alive and is the signed-in teacher allowlisted?".
+ * Deliberately narrow:
+ *   - an allowlist of probe names, never a caller-chosen function name;
+ *   - WebAccess.probe() returns no key, no allowlist and only a masked email;
+ *   - the JSONP callback name is restricted to a plain JS identifier;
+ *   - any failure still returns a normal, safe response instead of a stack trace.
+ * Grading, import and settings calls stay inside the Apps Script-served app. */
+var LessonGraderLauncherApi = (function () {
+  var PARAMETER = 'lgapi';
+  var SCHEMA = '1';
+  var PROBES = { status: true };
+  var CALLBACK_RE = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
+
+  function requested(e) {
+    var params = (e && e.parameter) || {};
+    return String(params[PARAMETER] || '').trim().toLowerCase();
+  }
+
+  function callbackName(params) {
+    var name = String((params && params.callback) || '').trim();
+    return CALLBACK_RE.test(name) ? name : '';
+  }
+
+  function bodyFor(call) {
+    if (!Object.prototype.hasOwnProperty.call(PROBES, call)) {
+      return { success: false, message: 'Unknown launcher probe "' + call + '". This endpoint is read-only.' };
+    }
+    return WebAccess.probe();
+  }
+
+  function respond(call, params) {
+    var body;
+    try {
+      body = bodyFor(call);
+    } catch (err) {
+      body = { success: false, message: 'The launcher probe could not be answered.' };
+    }
+    body.probe = call;
+    body.schema = SCHEMA;
+    var callback = callbackName(params);
+    var json = JSON.stringify(body);
+    if (!callback) {
+      return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+    }
+    return ContentService
+      .createTextOutput(callback + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+
+  return { PARAMETER: PARAMETER, requested: requested, respond: respond };
+})();
+
 /*
  * Keep this as the only doGet in the entire Apps Script project.
  * Remove it only if another current, intentional doGet exists elsewhere.
+ * A request without the launcher parameter behaves exactly as before.
  */
 function doGet(e) {
+  var call = LessonGraderLauncherApi.requested(e);
+  if (call) return LessonGraderLauncherApi.respond(call, (e && e.parameter) || {});
   return HtmlService
     .createHtmlOutputFromFile('WebApp')
     .setTitle('Lesson Grader');
